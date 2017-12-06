@@ -64,8 +64,8 @@ public class ARFHoeffdingTree extends HoeffdingTree {
 
         protected int numAttributes;
         
-        public RandomLearningNode(double[] initialClassObservations, int subspaceSize) {
-            super(initialClassObservations);
+        public RandomLearningNode(double[] initialClassObservations, int adaptiveGracePeriod, int subspaceSize) {
+            super(initialClassObservations, adaptiveGracePeriod);
             this.numAttributes = subspaceSize;
         }
 
@@ -107,8 +107,8 @@ public class ARFHoeffdingTree extends HoeffdingTree {
 
         private static final long serialVersionUID = 1L;
 
-        public LearningNodeNB(double[] initialClassObservations, int subspaceSize) {
-            super(initialClassObservations, subspaceSize);
+        public LearningNodeNB(double[] initialClassObservations, int adaptiveGracePeriod, int subspaceSize) {
+            super(initialClassObservations, adaptiveGracePeriod, subspaceSize);
         }
 
         @Override
@@ -135,8 +135,8 @@ public class ARFHoeffdingTree extends HoeffdingTree {
 
         protected double nbCorrectWeight = 0.0;
 
-        public LearningNodeNBAdaptive(double[] initialClassObservations, int subspaceSize) {
-            super(initialClassObservations, subspaceSize);
+        public LearningNodeNBAdaptive(double[] initialClassObservations, int adaptiveGracePeriod, int subspaceSize) {
+            super(initialClassObservations, adaptiveGracePeriod, subspaceSize);
         }
 
         @Override
@@ -171,11 +171,11 @@ public class ARFHoeffdingTree extends HoeffdingTree {
         LearningNode ret;
         int predictionOption = this.leafpredictionOption.getChosenIndex();
         if (predictionOption == 0) { //MC
-            ret = new RandomLearningNode(initialClassObservations, this.subspaceSizeOption.getValue());
+            ret = new RandomLearningNode(initialClassObservations, gracePeriodOption.getValue(), this.subspaceSizeOption.getValue());
         } else if (predictionOption == 1) { //NB
-            ret = new LearningNodeNB(initialClassObservations, this.subspaceSizeOption.getValue());
+            ret = new LearningNodeNB(initialClassObservations, gracePeriodOption.getValue(), this.subspaceSizeOption.getValue());
         } else { //NBAdaptive
-            ret = new LearningNodeNBAdaptive(initialClassObservations, this.subspaceSizeOption.getValue());
+            ret = new LearningNodeNBAdaptive(initialClassObservations, gracePeriodOption.getValue(), this.subspaceSizeOption.getValue());
         }
         return ret;
     }

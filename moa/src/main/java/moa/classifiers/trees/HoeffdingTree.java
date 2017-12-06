@@ -38,6 +38,7 @@ import moa.classifiers.core.attributeclassobservers.DiscreteAttributeClassObserv
 import moa.classifiers.core.attributeclassobservers.NullAttributeClassObserver;
 import moa.classifiers.core.attributeclassobservers.NumericAttributeClassObserver;
 import moa.classifiers.core.conditionaltests.InstanceConditionalTest;
+import moa.classifiers.core.splitcriteria.InfoGainSplitCriterion;
 import moa.classifiers.core.splitcriteria.SplitCriterion;
 import moa.core.AutoExpandVector;
 import moa.core.DoubleVector;
@@ -92,9 +93,12 @@ import com.yahoo.labs.samoa.instances.Instance;
  * @author Richard Kirkby (rkirkby@cs.waikato.ac.nz)
  * @version $Revision: 7 $
  */
+
+
 public class HoeffdingTree extends AbstractClassifier {
 
     private static final long serialVersionUID = 1L;
+    private static final int maxSteps = 2000;
 
     @Override
     public String getPurposeString() {
@@ -135,6 +139,9 @@ public class HoeffdingTree extends AbstractClassifier {
             "The number of instances a leaf should observe between split attempts.",
             200, 0, Integer.MAX_VALUE);
 
+    public FlagOption adaptiveGracePeriod = new FlagOption("adaptiveGracePeriod", 'a',
+            "Adaptive grace period.");
+
     public ClassOption splitCriterionOption = new ClassOption("splitCriterion",
             's', "Split criterion to use.", SplitCriterion.class,
             "InfoGainSplitCriterion");
@@ -149,7 +156,7 @@ public class HoeffdingTree extends AbstractClassifier {
             't', "Threshold below which a split will be forced to break ties.",
             0.05, 0.0, 1.0);
 
-public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
+    public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
         "Only allow binary splits.");
 
     public FlagOption stopMemManagementOption = new FlagOption(
@@ -390,6 +397,13 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
         
         protected boolean isInitialized;
 
+        private int adaptiveGracePeriod = 0;
+
+        public ActiveLearningNode(double[] initialClassObservations, int adaptiveGracePeriod) {
+            this(initialClassObservations);
+            this.adaptiveGracePeriod = adaptiveGracePeriod;
+        }
+
         public ActiveLearningNode(double[] initialClassObservations) {
             super(initialClassObservations);
             this.weightSeenAtLastSplitEvaluation = getWeightSeen();
@@ -431,6 +445,14 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
 
         public void setWeightSeenAtLastSplitEvaluation(double weight) {
             this.weightSeenAtLastSplitEvaluation = weight;
+        }
+
+        public void setAdaptiveGracePeriod(int adaptiveGracePeriod) {
+            this.adaptiveGracePeriod = adaptiveGracePeriod;
+        }
+
+        public int getAdaptiveGracePeriod() {
+            return this.adaptiveGracePeriod;
         }
 
         public AttributeSplitSuggestion[] getBestSplitSuggestions(
@@ -520,6 +542,9 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
             foundNode.parent.setChild(foundNode.parentBranch, leafNode);
             this.activeLeafNodeCount++;
         }
+
+
+
         if (leafNode instanceof LearningNode) {
             LearningNode learningNode = (LearningNode) leafNode;
             learningNode.learnFromInstance(inst, this);
@@ -527,8 +552,12 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
                     && (learningNode instanceof ActiveLearningNode)) {
                 ActiveLearningNode activeLearningNode = (ActiveLearningNode) learningNode;
                 double weightSeen = activeLearningNode.getWeightSeen();
+                int gracePeriod = this.gracePeriodOption.getValue();
+                if (this.adaptiveGracePeriod.isSet() && activeLearningNode.getAdaptiveGracePeriod() > 0) {
+                    gracePeriod = activeLearningNode.getAdaptiveGracePeriod();
+                }
                 if (weightSeen
-                        - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= this.gracePeriodOption.getValue()) {
+                        - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= gracePeriod) {
                     attemptToSplit(activeLearningNode, foundNode.parent,
                             foundNode.parentBranch);
                     activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
@@ -620,25 +649,204 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
         return (AttributeClassObserver) numericClassObserver.copy();
     }
 
+    protected void splitNode(ActiveLearningNode node, SplitNode parent, int parentIndex, AttributeSplitSuggestion splitDecision){
+        if (splitDecision.splitTest == null) {
+            // preprune - null wins
+            deactivateLearningNode(node, parent, parentIndex);
+        } else {
+            SplitNode newSplit = newSplitNode(splitDecision.splitTest,
+                    node.getObservedClassDistribution(),splitDecision.numSplits() );
+            for (int i = 0; i < splitDecision.numSplits(); i++) {
+                Node newChild = newLearningNode(splitDecision.resultingClassDistributionFromSplit(i));
+                newSplit.setChild(i, newChild);
+            }
+            this.activeLeafNodeCount--;
+            this.decisionNodeCount++;
+            this.activeLeafNodeCount += splitDecision.numSplits();
+            if (parent == null) {
+                this.treeRoot = newSplit;
+            } else {
+                parent.setChild(parentIndex, newSplit);
+            }
+        }
+        // manage memory
+        enforceTrackerLimit();
+    }
+
+    public static double getHoeffdingN(double range, double confidence, double delta) {
+        return ((range * range) * Math.log(1.0 / confidence)) / (2.0 * Math.pow(delta, 2.));
+    }
+
+    /*public static double secant(int maxIterations, double eps,
+                                double x, double x1, Object...params) {
+        int iterations = 0;
+        double inputDifference;
+        do {
+            double fx1 = f(x1, params);
+            double outputDifference = fx1-f(x, params);
+            double tmp = x1-fx1*(x1-x)/outputDifference;
+            x = x1;
+            x1 = tmp;
+            inputDifference = x1-x;
+            iterations++;
+        } while ((Math.abs(inputDifference)>eps) && (iterations<maxIterations) && f(x1, params)!=0);
+
+        if (iterations==maxIterations) {
+            System.out.println("Convergence not" +
+                    " found after " + maxIterations + " iterations");
+            return -1.;
+        }
+        System.out.println("result " + x1 + " iterations: " + iterations);
+        return x1;
+    }*/
+
+
+    static double Brent(double a,  double b, double iEps, double oEps, Object...params)
+    {
+        double  fa, fb, fc, fs, c, c0, c1, c2,temp, mtflag, d, s;
+        int i, mflag;
+
+        c = a;
+        d = c;
+        fa = f(a, params);
+        fb = f(b, params);
+        fc = fa;
+
+        if (fa*fb >= 0) {
+            System.out.println("wrong " + fa + " " + fb);
+            return -1.;
+        }
+
+        if ( Math.abs(fa) < Math.abs(fb))
+        {
+            temp = a;
+            a = b;
+            b = temp;
+            temp = fa;
+            fa = fb;
+            fb = temp;
+        } // if
+
+        mflag = 1;
+
+        while ( (Math.abs(fb) > oEps) && ( Math.abs(b-a) > iEps))
+        {
+
+            if ( (fa != fc) && fb != fc)
+            {
+                c0 = a*fb*fc/((fa-fb)*(fa-fc));
+                c1 = b*fa*fc/((fb-fa)*(fb-fc));
+                c2 = c*fa*fb/((fc-fa)*(fc-fb));
+
+                s = c0 + c1 + c2;
+            } // if
+            else
+                s = b - fb*(b-a)/(fb - fa);
+
+            if ( ( s < (3*(a+b)/4) || s > b) || ( (mflag == 1) &&
+                    Math.abs(s-b) >= (Math.abs(b-c)/2) ) ||
+                    ( (mflag == 0) && Math.abs(s-b) >= (Math.abs(c-d)/2) ) )
+            {
+                s = (a+b)/2;
+                mflag = 1;
+            } //if
+            else
+                mflag = 0;
+
+            fs = f(s, params);
+            d = c;
+            c = b;
+            fc = fb;
+            if ( (fa*fs)< 0)
+                b = s;
+            else
+                a = s;
+            if ( Math.abs(fa) < Math.abs(fb))
+            {
+                temp = a;
+                a = b;
+                b = temp;
+                temp = fa;
+                fa = fb;
+                fb = temp;
+            } // if
+
+        } // while
+
+        return b;
+    } //brent
+
+    public static double f(double x, Object[] params) {
+        double[] dist1 = ((double[])params[0]).clone();
+        double[] dist2 = (double[])params[1];
+        int maxClassIdx = (int)params[2];
+        double secEntropy = (double)params[3];
+        double entropyRange = (double)params[4];
+        double splitConfidence = (double)params[5];
+        double numTrainSamples = (double)params[6];
+
+        double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + x);
+        dist1[maxClassIdx] += x;
+        double entropy = InfoGainSplitCriterion.computeEntropy(new double[][]{dist1, dist2});
+        double result = secEntropy - entropy - delta;
+        return result;
+    }
+
+    public static int getAdaptiveGracePeriodMinEntropy(AttributeSplitSuggestion bestSuggestion, AttributeSplitSuggestion secondBestSuggestion, double entropyRange, double splitConfidence, double numTrainSamples, double tieDelta, int gracePeriod){
+        double[] lhsSplitDistribution = bestSuggestion.resultingClassDistributions[0].clone();
+        double[] rhsSplitDistribution = bestSuggestion.resultingClassDistributions[1].clone();
+
+        double lhsWeight = Utils.sum(lhsSplitDistribution);
+        double[] dist1 = lhsSplitDistribution;
+        double[] dist2 = rhsSplitDistribution;
+        double secEntropy = InfoGainSplitCriterion.computeEntropy(secondBestSuggestion.resultingClassDistributions);
+        if (lhsWeight == 0){
+            dist1 = rhsSplitDistribution;
+            dist2 = lhsSplitDistribution;
+        }else{
+            double lhsEntropy = InfoGainSplitCriterion.computeEntropy(lhsSplitDistribution);
+            double rhsEntropy = InfoGainSplitCriterion.computeEntropy(rhsSplitDistribution);
+            if (lhsEntropy > rhsEntropy){
+                dist1 = rhsSplitDistribution;
+                dist2 = lhsSplitDistribution;
+            }
+        }
+        int maxClassIdx = Utils.maxIndex(dist1);
+        double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + HoeffdingTree.maxSteps);
+        double[] tmp = dist1.clone();
+        tmp[maxClassIdx] += HoeffdingTree.maxSteps;
+        double tmpEntropy = InfoGainSplitCriterion.computeEntropy(new double[][]{tmp, dist2});
+        double result = HoeffdingTree.maxSteps;
+        if (secEntropy - tmpEntropy > delta){
+            result = HoeffdingTree.Brent(0, (double)HoeffdingTree.maxSteps, 0.5, 0.005,
+                    dist1, dist2, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
+            System.out.println("brent " + result);
+        }
+        double maxN = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, tieDelta)-numTrainSamples;
+        return (int)Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, result), HoeffdingTree.maxSteps)));
+    }
+
     protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
             int parentIndex) {
         if (!node.observedClassDistributionIsPure()) {
             SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
             AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
             Arrays.sort(bestSplitSuggestions);
-            boolean shouldSplit = false;
-            if (bestSplitSuggestions.length < 2) {
-                shouldSplit = bestSplitSuggestions.length > 0;
-            } else {
-                double hoeffdingBound = computeHoeffdingBound(splitCriterion.getRangeOfMerit(node.getObservedClassDistribution()),
+            if (bestSplitSuggestions.length == 1) {
+                this.splitNode(node, parent, parentIndex, bestSplitSuggestions[bestSplitSuggestions.length - 1]);
+            } else if (bestSplitSuggestions.length >= 2) {
+                double criterionRange = splitCriterion.getRangeOfMerit(node.getObservedClassDistribution());
+                double hoeffdingBound = computeHoeffdingBound(criterionRange,
                         this.splitConfidenceOption.getValue(), node.getWeightSeen());
                 AttributeSplitSuggestion bestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 1];
                 AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
                 if ((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
                         || (hoeffdingBound < this.tieThresholdOption.getValue())) {
-                    shouldSplit = true;
+                    this.splitNode(node, parent, parentIndex, bestSuggestion);
+                } else if (this.adaptiveGracePeriod.isSet()){
+
+                    node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                 }
-                // }
                 if ((this.removePoorAttsOption != null)
                         && this.removePoorAttsOption.isSet()) {
                     Set<Integer> poorAtts = new HashSet<Integer>();
@@ -670,30 +878,6 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
                         node.disableAttribute(poorAtt);
                     }
                 }
-            }
-            if (shouldSplit) {
-                AttributeSplitSuggestion splitDecision = bestSplitSuggestions[bestSplitSuggestions.length - 1];
-                if (splitDecision.splitTest == null) {
-                    // preprune - null wins
-                    deactivateLearningNode(node, parent, parentIndex);
-                } else {
-                    SplitNode newSplit = newSplitNode(splitDecision.splitTest,
-                            node.getObservedClassDistribution(),splitDecision.numSplits() );
-                    for (int i = 0; i < splitDecision.numSplits(); i++) {
-                        Node newChild = newLearningNode(splitDecision.resultingClassDistributionFromSplit(i));
-                        newSplit.setChild(i, newChild);
-                    }
-                    this.activeLeafNodeCount--;
-                    this.decisionNodeCount++;
-                    this.activeLeafNodeCount += splitDecision.numSplits();
-                    if (parent == null) {
-                        this.treeRoot = newSplit;
-                    } else {
-                        parent.setChild(parentIndex, newSplit);
-                    }
-                }
-                // manage memory
-                enforceTrackerLimit();
             }
         }
     }
@@ -853,6 +1037,10 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
             super(initialClassObservations);
         }
 
+        public LearningNodeNB(double[] initialClassObservations, int adaptiveGracePeriod) {
+            super(initialClassObservations, adaptiveGracePeriod);
+        }
+
         @Override
         public double[] getClassVotes(Instance inst, HoeffdingTree ht) {
             if (getWeightSeen() >= ht.nbThresholdOption.getValue()) {
@@ -876,6 +1064,10 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
         protected double mcCorrectWeight = 0.0;
 
         protected double nbCorrectWeight = 0.0;
+
+        public LearningNodeNBAdaptive(double[] initialClassObservations, int adaptiveGracePeriod) {
+            super(initialClassObservations, adaptiveGracePeriod);
+        }
 
         public LearningNodeNBAdaptive(double[] initialClassObservations) {
             super(initialClassObservations);
@@ -912,11 +1104,11 @@ public FlagOption binarySplitsOption = new FlagOption("binarySplits", 'b',
         LearningNode ret;
         int predictionOption = this.leafpredictionOption.getChosenIndex();
         if (predictionOption == 0) { //MC
-            ret = new ActiveLearningNode(initialClassObservations);
+            ret = new ActiveLearningNode(initialClassObservations, this.gracePeriodOption.getValue());
         } else if (predictionOption == 1) { //NB
-            ret = new LearningNodeNB(initialClassObservations);
+            ret = new LearningNodeNB(initialClassObservations, this.gracePeriodOption.getValue());
         } else { //NBAdaptive
-            ret = new LearningNodeNBAdaptive(initialClassObservations);
+            ret = new LearningNodeNBAdaptive(initialClassObservations, this.gracePeriodOption.getValue());
         }
         return ret;
     }

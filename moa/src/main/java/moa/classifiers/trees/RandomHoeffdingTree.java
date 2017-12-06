@@ -47,8 +47,8 @@ public class RandomHoeffdingTree extends HoeffdingTree {
 
         protected int numAttributes;
 
-        public RandomLearningNode(double[] initialClassObservations) {
-            super(initialClassObservations);
+        public RandomLearningNode(double[] initialClassObservations, int adaptiveGracePeriod) {
+            super(initialClassObservations, adaptiveGracePeriod);
         }
 
         @Override
@@ -90,8 +90,8 @@ public class RandomHoeffdingTree extends HoeffdingTree {
 
         private static final long serialVersionUID = 1L;
 
-        public LearningNodeNB(double[] initialClassObservations) {
-            super(initialClassObservations);
+        public LearningNodeNB(double[] initialClassObservations, int adaptiveGracePeriod) {
+            super(initialClassObservations, adaptiveGracePeriod);
         }
 
         @Override
@@ -118,8 +118,8 @@ public class RandomHoeffdingTree extends HoeffdingTree {
 
         protected double nbCorrectWeight = 0.0;
 
-        public LearningNodeNBAdaptive(double[] initialClassObservations) {
-            super(initialClassObservations);
+        public LearningNodeNBAdaptive(double[] initialClassObservations, int adaptiveGracePeriod) {
+            super(initialClassObservations, adaptiveGracePeriod);
         }
 
         @Override
@@ -154,11 +154,11 @@ public class RandomHoeffdingTree extends HoeffdingTree {
         LearningNode ret;
         int predictionOption = this.leafpredictionOption.getChosenIndex();
         if (predictionOption == 0) { //MC
-            ret = new RandomLearningNode(initialClassObservations);
+            ret = new RandomLearningNode(initialClassObservations, gracePeriodOption.getValue());
         } else if (predictionOption == 1) { //NB
-            ret = new LearningNodeNB(initialClassObservations);
+            ret = new LearningNodeNB(initialClassObservations, gracePeriodOption.getValue());
         } else { //NBAdaptive
-            ret = new LearningNodeNBAdaptive(initialClassObservations);
+            ret = new LearningNodeNBAdaptive(initialClassObservations, gracePeriodOption.getValue());
         }
         return ret;
     }
