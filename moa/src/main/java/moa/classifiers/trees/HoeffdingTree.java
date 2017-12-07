@@ -543,8 +543,6 @@ public class HoeffdingTree extends AbstractClassifier {
             this.activeLeafNodeCount++;
         }
 
-
-
         if (leafNode instanceof LearningNode) {
             LearningNode learningNode = (LearningNode) leafNode;
             learningNode.learnFromInstance(inst, this);
@@ -558,6 +556,7 @@ public class HoeffdingTree extends AbstractClassifier {
                 }
                 if (weightSeen
                         - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= gracePeriod) {
+
                     attemptToSplit(activeLearningNode, foundNode.parent,
                             foundNode.parentBranch);
                     activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
@@ -820,10 +819,12 @@ public class HoeffdingTree extends AbstractClassifier {
         if (secEntropy - tmpEntropy > delta){
             result = HoeffdingTree.Brent(0, (double)HoeffdingTree.maxSteps, 0.5, 0.005,
                     dist1, dist2, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
-            System.out.println("brent " + result);
+            System.out.println("brent " +  result);
         }
         double maxN = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, tieDelta)-numTrainSamples;
-        return (int)Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, result), HoeffdingTree.maxSteps)));
+        result = Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, result), HoeffdingTree.maxSteps)));
+        System.out.println(result);
+        return (int)result;
     }
 
     protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
@@ -832,6 +833,7 @@ public class HoeffdingTree extends AbstractClassifier {
             SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
             AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
             Arrays.sort(bestSplitSuggestions);
+
             if (bestSplitSuggestions.length == 1) {
                 this.splitNode(node, parent, parentIndex, bestSplitSuggestions[bestSplitSuggestions.length - 1]);
             } else if (bestSplitSuggestions.length >= 2) {
