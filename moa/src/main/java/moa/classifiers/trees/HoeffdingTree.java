@@ -676,43 +676,19 @@ public class HoeffdingTree extends AbstractClassifier {
         return ((range * range) * Math.log(1.0 / confidence)) / (2.0 * Math.pow(delta, 2.));
     }
 
-    /*public static double secant(int maxIterations, double eps,
-                                double x, double x1, Object...params) {
-        int iterations = 0;
-        double inputDifference;
-        do {
-            double fx1 = f(x1, params);
-            double outputDifference = fx1-f(x, params);
-            double tmp = x1-fx1*(x1-x)/outputDifference;
-            x = x1;
-            x1 = tmp;
-            inputDifference = x1-x;
-            iterations++;
-        } while ((Math.abs(inputDifference)>eps) && (iterations<maxIterations) && f(x1, params)!=0);
-
-        if (iterations==maxIterations) {
-            System.out.println("Convergence not" +
-                    " found after " + maxIterations + " iterations");
-            return -1.;
-        }
-        System.out.println("result " + x1 + " iterations: " + iterations);
-        return x1;
-    }*/
-
-
-    static double Brent(double a,  double b, double iEps, double oEps, Object...params)
+    static double Brent(double a,  double b, double iEps, double oEps, IOptFunction optFunction, Object...params)
     {
-        double  fa, fb, fc, fs, c, c0, c1, c2,temp, mtflag, d, s;
-        int i, mflag;
+        double  fa, fb, fc, fs, c, c0, c1, c2,temp, d, s;
+        int mflag;
 
         c = a;
         d = c;
-        fa = f(a, params);
-        fb = f(b, params);
+        fa = optFunction.func(a, params);
+        fb = optFunction.func(b, params);
         fc = fa;
 
         if (fa*fb >= 0) {
-            System.out.println("wrong " + fa + " " + fb);
+            System.out.println("Error no root between x0 and x1: f(x0) = " + fa + " f(x1)=" + fb);
             return -1.;
         }
 
@@ -752,7 +728,7 @@ public class HoeffdingTree extends AbstractClassifier {
             else
                 mflag = 0;
 
-            fs = f(s, params);
+            fs = optFunction.func(s, params);
             d = c;
             c = b;
             fc = fb;
@@ -775,57 +751,60 @@ public class HoeffdingTree extends AbstractClassifier {
         return b;
     } //brent
 
-    public static double f(double x, Object[] params) {
-        double[] dist1 = ((double[])params[0]).clone();
-        double[] dist2 = (double[])params[1];
-        int maxClassIdx = (int)params[2];
-        double secEntropy = (double)params[3];
-        double entropyRange = (double)params[4];
-        double splitConfidence = (double)params[5];
-        double numTrainSamples = (double)params[6];
+    interface IOptFunction {
+        double func(double x, Object[] params);
+    }
 
-        double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + x);
-        dist1[maxClassIdx] += x;
-        double entropy = InfoGainSplitCriterion.computeEntropy(new double[][]{dist1, dist2});
-        double result = secEntropy - entropy - delta;
-        return result;
+    static class OptFunction implements IOptFunction {
+        public double func(double x, Object[] params) {
+            double[][] dists = ((double[][])params[0]).clone();
+            int minEntropyIdx = (int)params[1];
+            int maxClassIdx = (int)params[2];
+            double secEntropy = (double)params[3];
+            double entropyRange = (double)params[4];
+            double splitConfidence = (double)params[5];
+            double numTrainSamples = (double)params[6];
+
+            double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + x);
+            dists[minEntropyIdx] = dists[minEntropyIdx].clone();
+            dists[minEntropyIdx][maxClassIdx] += x;
+            double entropy = InfoGainSplitCriterion.computeEntropy(dists);
+            double result = secEntropy - entropy - delta;
+            return result;
+        }
     }
 
     public static int getAdaptiveGracePeriodMinEntropy(AttributeSplitSuggestion bestSuggestion, AttributeSplitSuggestion secondBestSuggestion, double entropyRange, double splitConfidence, double numTrainSamples, double tieDelta, int gracePeriod){
-        double[] lhsSplitDistribution = bestSuggestion.resultingClassDistributions[0].clone();
-        double[] rhsSplitDistribution = bestSuggestion.resultingClassDistributions[1].clone();
-
-        double lhsWeight = Utils.sum(lhsSplitDistribution);
-        double[] dist1 = lhsSplitDistribution;
-        double[] dist2 = rhsSplitDistribution;
-        double secEntropy = InfoGainSplitCriterion.computeEntropy(secondBestSuggestion.resultingClassDistributions);
-        if (lhsWeight == 0){
-            dist1 = rhsSplitDistribution;
-            dist2 = lhsSplitDistribution;
-        }else{
-            double lhsEntropy = InfoGainSplitCriterion.computeEntropy(lhsSplitDistribution);
-            double rhsEntropy = InfoGainSplitCriterion.computeEntropy(rhsSplitDistribution);
-            if (lhsEntropy > rhsEntropy){
-                dist1 = rhsSplitDistribution;
-                dist2 = lhsSplitDistribution;
+        double minEntropy = Double.MAX_VALUE;
+        int minEntropyIdx = 0;
+        for (int i = 0; i < bestSuggestion.resultingClassDistributions.length; i++){
+            double weight = Utils.sum(bestSuggestion.resultingClassDistributions[i]);
+            double entropy = InfoGainSplitCriterion.computeEntropy(bestSuggestion.resultingClassDistributions[i]);
+            if (entropy < minEntropy && weight > 0){
+                minEntropyIdx = i;
+                minEntropy = entropy;
             }
         }
-        int maxClassIdx = Utils.maxIndex(dist1);
+        double secEntropy = InfoGainSplitCriterion.computeEntropy(secondBestSuggestion.resultingClassDistributions);
+
+        double[][] dists = bestSuggestion.resultingClassDistributions.clone();
+        int maxClassIdx = Utils.maxIndex(dists[minEntropyIdx]);
         double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + HoeffdingTree.maxSteps);
-        double[] tmp = dist1.clone();
-        tmp[maxClassIdx] += HoeffdingTree.maxSteps;
-        double tmpEntropy = InfoGainSplitCriterion.computeEntropy(new double[][]{tmp, dist2});
+
+        dists[minEntropyIdx] = dists[minEntropyIdx].clone();
+        dists[minEntropyIdx][maxClassIdx] += HoeffdingTree.maxSteps;
+        double tmpEntropy = InfoGainSplitCriterion.computeEntropy(dists);
         double result = HoeffdingTree.maxSteps;
+
         if (secEntropy - tmpEntropy > delta){
-            result = HoeffdingTree.Brent(0, (double)HoeffdingTree.maxSteps, 0.5, 0.005,
-                    dist1, dist2, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
-            System.out.println("brent " +  result);
+            result = HoeffdingTree.Brent(0, (double)HoeffdingTree.maxSteps, 0.5, 0.005, new OptFunction(),
+                    bestSuggestion.resultingClassDistributions, minEntropyIdx, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
         }
         double maxN = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, tieDelta)-numTrainSamples;
         result = Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, result), HoeffdingTree.maxSteps)));
-        System.out.println(result);
         return (int)result;
     }
+
 
     protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
             int parentIndex) {
