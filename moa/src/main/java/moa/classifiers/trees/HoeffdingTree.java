@@ -169,6 +169,12 @@ public class HoeffdingTree extends AbstractClassifier {
     public FlagOption noPrePruneOption = new FlagOption("noPrePrune", 'p',
             "Disable pre-pruning.");
 
+    public double trainOnInstanceTime=0.;
+    public double voteOnInstanceTime=0.;
+    public int attempts=0;
+    public int boundSplits=0;
+    public int maxSplits=0;
+
     public static class FoundNode {
 
         public Node node;
@@ -511,6 +517,10 @@ public class HoeffdingTree extends AbstractClassifier {
 
     @Override
     public int measureByteSize() {
+        //System.out.println("train " + this.trainOnInstanceTime/1000. + " seconds");
+        //System.out.println("vote " + this.voteOnInstanceTime/1000. + " seconds");
+        System.out.println("both " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + " seconds");
+        System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
         return calcByteSize();
     }
 
@@ -531,6 +541,7 @@ public class HoeffdingTree extends AbstractClassifier {
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
+        long startTime = System.currentTimeMillis();
         if (this.treeRoot == null) {
             this.treeRoot = newLearningNode();
             this.activeLeafNodeCount = 1;
@@ -567,10 +578,12 @@ public class HoeffdingTree extends AbstractClassifier {
                 % this.memoryEstimatePeriodOption.getValue() == 0) {
             estimateModelByteSizes();
         }
+        this.trainOnInstanceTime += System.currentTimeMillis() - startTime;
     }
 
     @Override
     public double[] getVotesForInstance(Instance inst) {
+        long startTime = System.currentTimeMillis();
         if (this.treeRoot != null) {
             FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst,
                     null, -1);
@@ -578,11 +591,14 @@ public class HoeffdingTree extends AbstractClassifier {
             if (leafNode == null) {
                 leafNode = foundNode.parent;
             }
+            this.voteOnInstanceTime += System.currentTimeMillis() - startTime;
             return leafNode.getClassVotes(inst, this);
           } else {
             int numClasses = inst.dataset().numClasses();
+            this.voteOnInstanceTime += System.currentTimeMillis() - startTime;
             return new double[numClasses];
           }
+
     }
 
     @Override
@@ -809,11 +825,13 @@ public class HoeffdingTree extends AbstractClassifier {
     protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
             int parentIndex) {
         if (!node.observedClassDistributionIsPure()) {
+            this.attempts++;
             SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
             AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
             Arrays.sort(bestSplitSuggestions);
 
             if (bestSplitSuggestions.length == 1) {
+                this.boundSplits++;
                 this.splitNode(node, parent, parentIndex, bestSplitSuggestions[bestSplitSuggestions.length - 1]);
             } else if (bestSplitSuggestions.length >= 2) {
                 double criterionRange = splitCriterion.getRangeOfMerit(node.getObservedClassDistribution());
@@ -823,6 +841,10 @@ public class HoeffdingTree extends AbstractClassifier {
                 AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
                 if ((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
                         || (hoeffdingBound < this.tieThresholdOption.getValue())) {
+                    if (hoeffdingBound < this.tieThresholdOption.getValue())
+                        this.maxSplits++;
+                    else
+                        this.boundSplits++;
                     this.splitNode(node, parent, parentIndex, bestSuggestion);
                 } else if (this.adaptiveGracePeriod.isSet()){
 
