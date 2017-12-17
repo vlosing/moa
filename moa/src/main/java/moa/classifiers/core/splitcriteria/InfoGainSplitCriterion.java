@@ -55,8 +55,11 @@ public class InfoGainSplitCriterion extends AbstractOptionHandler implements
 
     @Override
     public double getRangeOfMerit(double[] preSplitDist) {
-        int numClasses = preSplitDist.length > 2 ? preSplitDist.length : 2;
-        return Utils.log2(numClasses);
+        //int numClasses = 0;
+        //for (int i = 0; i < preSplitDist.length; i++)
+        //    if (preSplitDist[i]> 0.)
+        //        numClasses++;
+        return Utils.log2(Math.max(preSplitDist.length,2));
     }
 
     public static double computeEntropy(double[] dist) {

@@ -170,10 +170,12 @@ public class HoeffdingTree extends AbstractClassifier {
             "Disable pre-pruning.");
 
     public double trainOnInstanceTime=0.;
+    public double attemptToSplitTime = 0;
     public double voteOnInstanceTime=0.;
     public int attempts=0;
     public int boundSplits=0;
     public int maxSplits=0;
+    public int trainStepCount=0;
 
     public static class FoundNode {
 
@@ -519,7 +521,7 @@ public class HoeffdingTree extends AbstractClassifier {
     public int measureByteSize() {
         //System.out.println("train " + this.trainOnInstanceTime/1000. + " seconds");
         //System.out.println("vote " + this.voteOnInstanceTime/1000. + " seconds");
-        System.out.println("both " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + " seconds");
+        System.out.println("attemptTime " + this.attemptToSplitTime/1000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + " s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
         return calcByteSize();
     }
@@ -824,6 +826,7 @@ public class HoeffdingTree extends AbstractClassifier {
 
     protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
             int parentIndex) {
+        double startTime = System.currentTimeMillis();
         if (!node.observedClassDistributionIsPure()) {
             this.attempts++;
             SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
@@ -883,6 +886,7 @@ public class HoeffdingTree extends AbstractClassifier {
                 }
             }
         }
+        this.attemptToSplitTime += System.currentTimeMillis() - startTime;
     }
 
     public void enforceTrackerLimit() {
