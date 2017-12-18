@@ -200,6 +200,7 @@ public class HoeffdingTree extends AbstractClassifier {
 
         public Node(double[] classObservations) {
             this.observedClassDistribution = new DoubleVector(classObservations);
+            //this.observedClassDistribution = new DoubleVector();
         }
 
         public int calcByteSize() {
