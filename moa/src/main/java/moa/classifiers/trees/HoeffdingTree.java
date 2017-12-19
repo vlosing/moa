@@ -793,6 +793,17 @@ public class HoeffdingTree extends AbstractClassifier {
         }
     }
 
+    public static int getAdaptiveGracePeriodNaive(AttributeSplitSuggestion bestSuggestion, AttributeSplitSuggestion secondBestSuggestion, double entropyRange, double splitConfidence, double numTrainSamples, double tieDelta, int gracePeriod){
+        double maxN = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, tieDelta)-numTrainSamples;
+        double delta = bestSuggestion.merit - secondBestSuggestion.merit;
+        if (delta > 0) {
+            double estimate = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, delta) - numTrainSamples;
+            return (int) Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, estimate), HoeffdingTree.maxSteps)));
+        } else
+            return HoeffdingTree.maxSteps;
+
+    }
+
     public static int getAdaptiveGracePeriodMinEntropy(AttributeSplitSuggestion bestSuggestion, AttributeSplitSuggestion secondBestSuggestion, double entropyRange, double splitConfidence, double numTrainSamples, double tieDelta, int gracePeriod){
         double minEntropy = Double.MAX_VALUE;
         int minEntropyIdx = 0;
@@ -852,7 +863,8 @@ public class HoeffdingTree extends AbstractClassifier {
                     this.splitNode(node, parent, parentIndex, bestSuggestion);
                 } else if (this.adaptiveGracePeriod.isSet()){
 
-                    node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
+                    //node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
+                    node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodNaive(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                 }
                 if ((this.removePoorAttsOption != null)
                         && this.removePoorAttsOption.isSet()) {
