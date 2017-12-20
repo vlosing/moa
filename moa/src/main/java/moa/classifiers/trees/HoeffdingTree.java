@@ -571,8 +571,7 @@ public class HoeffdingTree extends AbstractClassifier {
                 if (weightSeen
                         - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= gracePeriod) {
 
-                    attemptToSplit(activeLearningNode, foundNode.parent,
-                            foundNode.parentBranch);
+                    attemptToSplit(activeLearningNode, foundNode.parent, foundNode.parentBranch);
                     activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
                 }
             }
@@ -798,7 +797,7 @@ public class HoeffdingTree extends AbstractClassifier {
         double delta = bestSuggestion.merit - secondBestSuggestion.merit;
         if (delta > 0) {
             double estimate = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, delta) - numTrainSamples;
-            return (int) Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, estimate), HoeffdingTree.maxSteps)));
+            return (int) Math.ceil(Math.min(maxN, Math.min(estimate, HoeffdingTree.maxSteps)));
         } else
             return HoeffdingTree.maxSteps;
 
@@ -862,7 +861,6 @@ public class HoeffdingTree extends AbstractClassifier {
                         this.boundSplits++;
                     this.splitNode(node, parent, parentIndex, bestSuggestion);
                 } else if (this.adaptiveGracePeriod.isSet()){
-
                     //node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                     node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodNaive(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                 }
