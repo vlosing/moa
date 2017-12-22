@@ -48,6 +48,9 @@ import moa.core.StringUtils;
 import moa.core.Utils;
 import moa.options.ClassOption;
 import com.yahoo.labs.samoa.instances.Instance;
+import java.io.PrintWriter;
+import java.io.FileOutputStream;
+import java.io.FileNotFoundException;
 
 /**
  * Hoeffding Tree or VFDT.
@@ -98,7 +101,10 @@ import com.yahoo.labs.samoa.instances.Instance;
 public class HoeffdingTree extends AbstractClassifier {
 
     private static final long serialVersionUID = 1L;
-    private static final int maxSteps = 2000;
+    private static final int MAX_STEPS = 2000;
+    private static final int MEASURE_GRACE_PERIOD = 5;
+    private static final int INITIAL_GRACE_PERIOD = 50;
+
 
     @Override
     public String getPurposeString() {
@@ -139,8 +145,8 @@ public class HoeffdingTree extends AbstractClassifier {
             "The number of instances a leaf should observe between split attempts.",
             200, 0, Integer.MAX_VALUE);
 
-    public FlagOption adaptiveGracePeriod = new FlagOption("adaptiveGracePeriod", 'a',
-            "Adaptive grace period.");
+    public FlagOption measureOffsetOption = new FlagOption("measureOffset", 'o',
+                "Measure split offset.");
 
     public ClassOption splitCriterionOption = new ClassOption("splitCriterion",
             's', "Split criterion to use.", SplitCriterion.class,
@@ -176,6 +182,8 @@ public class HoeffdingTree extends AbstractClassifier {
     public int boundSplits=0;
     public int maxSplits=0;
     public int trainStepCount=0;
+    public DoubleVector boundSplitErrors = new DoubleVector();
+    public DoubleVector maxSplitErrors = new DoubleVector();
 
     public static class FoundNode {
 
@@ -401,21 +409,23 @@ public class HoeffdingTree extends AbstractClassifier {
         private static final long serialVersionUID = 1L;
 
         protected double weightSeenAtLastSplitEvaluation;
+        protected double initialWeight;
 
         protected AutoExpandVector<AttributeClassObserver> attributeObservers = new AutoExpandVector<AttributeClassObserver>();
         
         protected boolean isInitialized;
 
-        private int adaptiveGracePeriod = 0;
+        private int gracePeriod = 0;
 
-        public ActiveLearningNode(double[] initialClassObservations, int adaptiveGracePeriod) {
+        public ActiveLearningNode(double[] initialClassObservations, int gracePeriod) {
             this(initialClassObservations);
-            this.adaptiveGracePeriod = adaptiveGracePeriod;
+            this.gracePeriod = gracePeriod;
         }
 
         public ActiveLearningNode(double[] initialClassObservations) {
             super(initialClassObservations);
             this.weightSeenAtLastSplitEvaluation = getWeightSeen();
+            this.initialWeight = this.weightSeenAtLastSplitEvaluation;
             this.isInitialized = false;
         }
 
@@ -452,16 +462,20 @@ public class HoeffdingTree extends AbstractClassifier {
             return this.weightSeenAtLastSplitEvaluation;
         }
 
+        public double getInitialWeight() {
+            return this.initialWeight;
+        }
+
         public void setWeightSeenAtLastSplitEvaluation(double weight) {
             this.weightSeenAtLastSplitEvaluation = weight;
         }
 
-        public void setAdaptiveGracePeriod(int adaptiveGracePeriod) {
-            this.adaptiveGracePeriod = adaptiveGracePeriod;
+        public void setGracePeriod(int gracePeriod) {
+            this.gracePeriod = gracePeriod;
         }
 
-        public int getAdaptiveGracePeriod() {
-            return this.adaptiveGracePeriod;
+        public int getGracePeriod() {
+            return this.gracePeriod;
         }
 
         public AttributeSplitSuggestion[] getBestSplitSuggestions(
@@ -520,10 +534,22 @@ public class HoeffdingTree extends AbstractClassifier {
 
     @Override
     public int measureByteSize() {
-        //System.out.println("train " + this.trainOnInstanceTime/1000. + " seconds");
-        //System.out.println("vote " + this.voteOnInstanceTime/1000. + " seconds");
         System.out.println("attemptTime " + this.attemptToSplitTime/1000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + " s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
+        if (measureOffsetOption.isSet()){
+            System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));
+        }
+        try{
+            PrintWriter writer = new PrintWriter(new FileOutputStream("/home/vlosing/storage/Tmp/moaStatistics.csv", false));
+            writer.println(String.format("totalTime;attemptTime;attempts;boundSplits;maxSplits;boundOffset;maxOffset"));
+            writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f",(this.trainOnInstanceTime + this.voteOnInstanceTime)/1000., this.attemptToSplitTime/1000., attempts,
+                    boundSplits, maxSplits, Utils.mean(this.boundSplitErrors.getArrayRef()), Utils.mean(this.maxSplitErrors.getArrayRef())));
+            writer.close();
+        }
+        catch (FileNotFoundException e)
+        {
+            e.printStackTrace();
+        }
         return calcByteSize();
     }
 
@@ -539,6 +565,73 @@ public class HoeffdingTree extends AbstractClassifier {
         this.growthAllowed = true;
         if (this.leafpredictionOption.getChosenIndex()>0) { 
             this.removePoorAttsOption = null;
+        }
+    }
+
+    public void singleFit(LearningNode learningNode, SplitNode parent, int parentBranch){
+        if (this.growthAllowed
+                && (learningNode instanceof ActiveLearningNode)) {
+            ActiveLearningNode activeLearningNode = (ActiveLearningNode) learningNode;
+            double weightSeen = activeLearningNode.getWeightSeen();
+            int gracePeriod = this.gracePeriodOption.getValue();
+            if (this.gracePeriodTypeOption.getChosenIndex() > 0 && activeLearningNode.getGracePeriod() > 0) {
+                gracePeriod = activeLearningNode.getGracePeriod();
+            }
+            if (weightSeen
+                    - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= gracePeriod) {
+
+                if (!activeLearningNode.observedClassDistributionIsPure()) {
+                    this.attempts++;
+                    attemptToSplit(activeLearningNode, parent, parentBranch, true);
+                }
+                activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
+            }
+        }
+    }
+
+    public void singleFitMeasure(LearningNode learningNode, SplitNode parent, int parentBranch){
+        if (this.growthAllowed
+                && (learningNode instanceof ActiveLearningNode)) {
+            ActiveLearningNode activeLearningNode = (ActiveLearningNode) learningNode;
+            double weightSeen = activeLearningNode.getWeightSeen();
+
+            //XXVL here!
+            int gracePeriod = HoeffdingTree.MEASURE_GRACE_PERIOD;
+            boolean adaptGracePeriod = true;
+            if (activeLearningNode.getWeightSeenAtLastSplitEvaluation() == activeLearningNode.getInitialWeight()){
+                gracePeriod = HoeffdingTree.INITIAL_GRACE_PERIOD;
+                adaptGracePeriod = false;
+            }
+            else if (activeLearningNode.getWeightSeenAtLastSplitEvaluation() < activeLearningNode.getInitialWeight() + this.gracePeriodOption.getValue()) {
+                adaptGracePeriod = false;
+            }
+            else {
+                //adaptGracePeriod = true;
+                //gracePeriod = HoeffdingTree.MEASURE_GRACE_PERIOD;
+            }
+
+            if (weightSeen
+                    - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= gracePeriod) {
+                activeLearningNode.setGracePeriod(activeLearningNode.getGracePeriod() - gracePeriod);
+                if (!activeLearningNode.observedClassDistributionIsPure()) {
+                    int splitReturn;
+                    if (activeLearningNode.getGracePeriod() <= 0) {
+                        splitReturn = attemptToSplit(activeLearningNode, parent, parentBranch, adaptGracePeriod);
+                        this.attempts++;
+
+                    } else {
+                        splitReturn = attemptToSplit(activeLearningNode, parent, parentBranch, false);
+                    }
+                    if (splitReturn == 1){
+                        this.boundSplitErrors.addToValue(this.boundSplitErrors.numValues(),Math.max(0., activeLearningNode.getGracePeriod()));
+                    }
+
+                    else if (splitReturn == 2) {
+                        this.maxSplitErrors.addToValue(this.maxSplitErrors.numValues(), Math.max(0., activeLearningNode.getGracePeriod()));
+                    }
+                    activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
+                }
+            }
         }
     }
 
@@ -560,22 +653,12 @@ public class HoeffdingTree extends AbstractClassifier {
         if (leafNode instanceof LearningNode) {
             LearningNode learningNode = (LearningNode) leafNode;
             learningNode.learnFromInstance(inst, this);
-            if (this.growthAllowed
-                    && (learningNode instanceof ActiveLearningNode)) {
-                ActiveLearningNode activeLearningNode = (ActiveLearningNode) learningNode;
-                double weightSeen = activeLearningNode.getWeightSeen();
-                int gracePeriod = this.gracePeriodOption.getValue();
-                if (this.adaptiveGracePeriod.isSet() && activeLearningNode.getAdaptiveGracePeriod() > 0) {
-                    gracePeriod = activeLearningNode.getAdaptiveGracePeriod();
-                }
-                if (weightSeen
-                        - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= gracePeriod) {
-
-                    attemptToSplit(activeLearningNode, foundNode.parent, foundNode.parentBranch);
-                    activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
-                }
-            }
+            if (this.measureOffsetOption.isSet())
+                this.singleFitMeasure(learningNode, foundNode.parent, foundNode.parentBranch);
+            else
+                this.singleFit(learningNode, foundNode.parent, foundNode.parentBranch);
         }
+
         if (this.trainingWeightSeenByModel
                 % this.memoryEstimatePeriodOption.getValue() == 0) {
             estimateModelByteSizes();
@@ -792,14 +875,14 @@ public class HoeffdingTree extends AbstractClassifier {
         }
     }
 
+
     public static int getAdaptiveGracePeriodNaive(AttributeSplitSuggestion bestSuggestion, AttributeSplitSuggestion secondBestSuggestion, double entropyRange, double splitConfidence, double numTrainSamples, double tieDelta, int gracePeriod){
-        double maxN = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, tieDelta)-numTrainSamples;
         double delta = bestSuggestion.merit - secondBestSuggestion.merit;
         if (delta > 0) {
             double estimate = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, delta) - numTrainSamples;
-            return (int) Math.ceil(Math.min(maxN, Math.min(estimate, HoeffdingTree.maxSteps)));
+            return (int) Math.ceil(Math.min(estimate, HoeffdingTree.MAX_STEPS));
         } else
-            return HoeffdingTree.maxSteps;
+            return HoeffdingTree.MAX_STEPS;
 
     }
 
@@ -818,52 +901,61 @@ public class HoeffdingTree extends AbstractClassifier {
 
         double[][] dists = bestSuggestion.resultingClassDistributions.clone();
         int maxClassIdx = Utils.maxIndex(dists[minEntropyIdx]);
-        double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + HoeffdingTree.maxSteps);
+        double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + HoeffdingTree.MAX_STEPS);
 
         dists[minEntropyIdx] = dists[minEntropyIdx].clone();
-        dists[minEntropyIdx][maxClassIdx] += HoeffdingTree.maxSteps;
+        dists[minEntropyIdx][maxClassIdx] += HoeffdingTree.MAX_STEPS;
         double tmpEntropy = InfoGainSplitCriterion.computeEntropy(dists);
-        double result = HoeffdingTree.maxSteps;
+        double result = HoeffdingTree.MAX_STEPS;
 
         if (secEntropy - tmpEntropy > delta){
-            result = HoeffdingTree.Brent(0, (double)HoeffdingTree.maxSteps, 0.5, 0.005, new OptFunction(),
+            result = HoeffdingTree.Brent(0, (double)HoeffdingTree.MAX_STEPS, 0.5, 0.005, new OptFunction(),
                     bestSuggestion.resultingClassDistributions, minEntropyIdx, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
         }
-        double maxN = HoeffdingTree.getHoeffdingN(entropyRange, splitConfidence, tieDelta)-numTrainSamples;
-        result = Math.ceil(Math.min(maxN, Math.min(Math.max(gracePeriod, result), HoeffdingTree.maxSteps)));
+        result = Math.ceil(Math.min(Math.max(gracePeriod, result), HoeffdingTree.MAX_STEPS));
         return (int)result;
     }
 
-
-    protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
-            int parentIndex) {
+    protected int attemptToSplit(ActiveLearningNode node, SplitNode parent, int parentIndex, boolean adaptGracePeriod) {
         double startTime = System.currentTimeMillis();
-        if (!node.observedClassDistributionIsPure()) {
-            this.attempts++;
-            SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
-            AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
-            Arrays.sort(bestSplitSuggestions);
 
-            if (bestSplitSuggestions.length == 1) {
-                this.boundSplits++;
-                this.splitNode(node, parent, parentIndex, bestSplitSuggestions[bestSplitSuggestions.length - 1]);
-            } else if (bestSplitSuggestions.length >= 2) {
-                double criterionRange = splitCriterion.getRangeOfMerit(node.getObservedClassDistribution());
-                double hoeffdingBound = computeHoeffdingBound(criterionRange,
-                        this.splitConfidenceOption.getValue(), node.getWeightSeen());
-                AttributeSplitSuggestion bestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 1];
-                AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
-                if ((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
-                        || (hoeffdingBound < this.tieThresholdOption.getValue())) {
-                    if (hoeffdingBound < this.tieThresholdOption.getValue())
-                        this.maxSplits++;
-                    else
-                        this.boundSplits++;
-                    this.splitNode(node, parent, parentIndex, bestSuggestion);
-                } else if (this.adaptiveGracePeriod.isSet()){
-                    //node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
-                    node.adaptiveGracePeriod = HoeffdingTree.getAdaptiveGracePeriodNaive(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
+        SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
+        AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
+        Arrays.sort(bestSplitSuggestions);
+        int splitResult = 0;
+        if (bestSplitSuggestions.length == 1) {
+            this.boundSplits++;
+            this.splitNode(node, parent, parentIndex, bestSplitSuggestions[bestSplitSuggestions.length - 1]);
+            splitResult = 1;
+        } else if (bestSplitSuggestions.length >= 2) {
+            double criterionRange = splitCriterion.getRangeOfMerit(node.getObservedClassDistribution());
+            double hoeffdingBound = computeHoeffdingBound(criterionRange,
+                    this.splitConfidenceOption.getValue(), node.getWeightSeen());
+            AttributeSplitSuggestion bestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 1];
+            AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
+            if ((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
+                    || (hoeffdingBound < this.tieThresholdOption.getValue())) {
+                if (hoeffdingBound < this.tieThresholdOption.getValue()) {
+                    this.maxSplits++;
+                    splitResult = 2;
                 }
+                else {
+                    this.boundSplits++;
+                    splitResult = 1;
+                }
+                this.splitNode(node, parent, parentIndex, bestSuggestion);
+            } else {
+                if (adaptGracePeriod) {
+                    double maxN = HoeffdingTree.getHoeffdingN(criterionRange, splitConfidenceOption.getValue(), tieThresholdOption.getValue()) - node.getWeightSeen();
+                    double gracePeriod = this.gracePeriodOption.getValue();
+                    if (this.gracePeriodTypeOption.getChosenIndex() == 1) {
+                        gracePeriod = HoeffdingTree.getAdaptiveGracePeriodNaive(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
+                    } else if (this.gracePeriodTypeOption.getChosenIndex() == 2) {
+                        gracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
+                    }
+                    node.gracePeriod = (int) Math.ceil(Math.min(maxN, gracePeriod));
+                }
+
                 if ((this.removePoorAttsOption != null)
                         && this.removePoorAttsOption.isSet()) {
                     Set<Integer> poorAtts = new HashSet<Integer>();
@@ -879,7 +971,7 @@ public class HoeffdingTree extends AbstractClassifier {
                             }
                         }
                     }
-                    // scan 2 - remove good ones from set
+                    // scan 2wwwwe - remove good ones from set
                     for (int i = 0; i < bestSplitSuggestions.length; i++) {
                         if (bestSplitSuggestions[i].splitTest != null) {
                             int[] splitAtts = bestSplitSuggestions[i].splitTest.getAttsTestDependsOn();
@@ -898,6 +990,7 @@ public class HoeffdingTree extends AbstractClassifier {
             }
         }
         this.attemptToSplitTime += System.currentTimeMillis() - startTime;
+        return splitResult;
     }
 
     public void enforceTrackerLimit() {
@@ -1041,6 +1134,13 @@ public class HoeffdingTree extends AbstractClassifier {
                 "Naive Bayes",
                 "Naive Bayes Adaptive"}, 2);
 
+    public MultiChoiceOption gracePeriodTypeOption = new MultiChoiceOption(
+            "gracePeriodType", 'a', "Grace period.", new String[]{
+            "EQ", "NI", "ME"}, new String[]{
+            "Equidistant",
+            "Naive",
+            "Min entropy"}, 0);
+
     public IntOption nbThresholdOption = new IntOption(
             "nbThreshold",
             'q',
@@ -1055,8 +1155,8 @@ public class HoeffdingTree extends AbstractClassifier {
             super(initialClassObservations);
         }
 
-        public LearningNodeNB(double[] initialClassObservations, int adaptiveGracePeriod) {
-            super(initialClassObservations, adaptiveGracePeriod);
+        public LearningNodeNB(double[] initialClassObservations, int gracePeriod) {
+            super(initialClassObservations, gracePeriod);
         }
 
         @Override

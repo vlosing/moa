@@ -383,7 +383,7 @@ public class HoeffdingAdaptiveTree extends HoeffdingTree {
             if (weightSeen
                     - this.getWeightSeenAtLastSplitEvaluation() >= ht.gracePeriodOption.getValue()) {
                 ht.attemptToSplit(this, parent,
-                        parentBranch);
+                        parentBranch, true);
                 this.setWeightSeenAtLastSplitEvaluation(weightSeen);
             }
 

@@ -15,7 +15,7 @@
  *
  *    You should have received a copy of the GNU General Public License
  *    along with this program. If not, see <http://www.gnu.org/licenses/>.
- *    
+ *
  */
 package moa.classifiers.trees;
 
@@ -60,9 +60,10 @@ public class HoeffdingAdaptiveTreeClassifLeaves extends HoeffdingAdaptiveTree {
     }
 
     @Override
-    protected void attemptToSplit(ActiveLearningNode node,
+    protected int attemptToSplit(ActiveLearningNode node,
 	    SplitNode parent,
-	    int parentIndex) {
+	    int parentIndex, boolean adaptGracePeriod) {
+    	int splitResult = 0;
 	if (!node.observedClassDistributionIsPure()) {
 	    SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
 	    AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
@@ -139,6 +140,7 @@ public class HoeffdingAdaptiveTreeClassifLeaves extends HoeffdingAdaptiveTree {
 		enforceTrackerLimit();
 	    }
 	}
+	return splitResult;
     }
 
     public class LearningNodeHATClassifier extends AdaLearningNode  {

@@ -122,8 +122,7 @@ public class ASHoeffdingTree extends HoeffdingTree {
                 double weightSeen = activeLearningNode.getWeightSeen();
                 if (weightSeen
                         - activeLearningNode.getWeightSeenAtLastSplitEvaluation() >= this.gracePeriodOption.getValue()) {
-                    attemptToSplit(activeLearningNode, foundNode.parent,
-                            foundNode.parentBranch);
+                    attemptToSplit(activeLearningNode, foundNode.parent, foundNode.parentBranch, true);
                     //EXTENSION TO ASHT
                     // if size too big, resize tree ONLY Split Nodes
                     while (this.decisionNodeCount >= this.maxSize && this.treeRoot instanceof SplitNode) {

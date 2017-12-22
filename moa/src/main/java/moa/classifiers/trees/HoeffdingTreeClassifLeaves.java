@@ -105,8 +105,9 @@ public class HoeffdingTreeClassifLeaves extends HoeffdingTree {
     }
 
     @Override
-    protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
-            int parentIndex) {
+    protected int attemptToSplit(ActiveLearningNode node, SplitNode parent,
+            int parentIndex, boolean adaptGracePeriod) {
+        int splitResult = 0;
         //ßSystem.out.println("Attempt to Split");
         if (!node.observedClassDistributionIsPure()) {
             SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
@@ -185,5 +186,6 @@ public class HoeffdingTreeClassifLeaves extends HoeffdingTree {
                 enforceTrackerLimit();
             }
         }
+        return splitResult;
     }
 }
