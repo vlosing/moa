@@ -52,6 +52,7 @@ import java.io.PrintWriter;
 import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
 import com.github.javacliparser.StringOption;
+import java.util.Map;
 /**
  * Hoeffding Tree or VFDT.
  *
@@ -184,6 +185,8 @@ public class HoeffdingTree extends AbstractClassifier {
     public int maxSplits=0;
     public int trainStepCount=0;
     public DoubleVector boundSplitErrors = new DoubleVector();
+    public DoubleVector boundSplitNumSamples = new DoubleVector();
+
     public DoubleVector maxSplitErrors = new DoubleVector();
 
     public static class FoundNode {
@@ -537,10 +540,13 @@ public class HoeffdingTree extends AbstractClassifier {
     public int measureByteSize() {
         System.out.println("attemptTime " + this.attemptToSplitTime/1000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + "s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
+        Map<String, String> env = System.getenv();
+        String dir = env.get("STORAGE_DIR") + "/Tmp/";
+
         if (!measureOffsetOption.getValue().equals("")) {
             System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));
             try {
-                String fileName = "/home/vlosing/storage/Tmp/moaStatistics_" + measureOffsetOption.getValue() + ".csv";
+                String fileName = dir + "moaStatistics_" + measureOffsetOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
                 writer.println(String.format("totalTime;attemptTime;attempts;boundSplits;maxSplits;boundOffset;maxOffset"));
                 writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f", (this.trainOnInstanceTime + this.voteOnInstanceTime) / 1000., this.attemptToSplitTime / 1000., attempts,
@@ -549,6 +555,22 @@ public class HoeffdingTree extends AbstractClassifier {
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             }
+        }
+
+        try {
+            String fileName = dir + "moaStatistics.csv";
+            PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
+            writer.println(String.format("totalTime;attemptTime;attempts;boundSplits;maxSplits;boundOffset;maxOffset"));
+            writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f", (this.trainOnInstanceTime + this.voteOnInstanceTime) / 1000., this.attemptToSplitTime / 1000., attempts,
+                    boundSplits, maxSplits, Utils.mean(this.boundSplitErrors.getArrayRef()), Utils.mean(this.maxSplitErrors.getArrayRef())));
+            writer.close();
+
+            fileName = dir + "moaSplitNumSamples.csv";
+            writer = new PrintWriter(new FileOutputStream(fileName, false));
+            writer.println(Utils.arrayToString(this.boundSplitNumSamples.getArrayRef()));
+            writer.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
         }
         return calcByteSize();
     }
@@ -942,7 +964,9 @@ public class HoeffdingTree extends AbstractClassifier {
                 else {
                     this.boundSplits++;
                     splitResult = 1;
+
                 }
+                this.boundSplitNumSamples.addToValue(this.boundSplitNumSamples.numValues(), node.getWeightSeen() - node.initialWeight);
                 this.splitNode(node, parent, parentIndex, bestSuggestion);
             } else {
                 if (adaptGracePeriod) {
