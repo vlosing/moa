@@ -146,8 +146,12 @@ public class HoeffdingTree extends AbstractClassifier {
             "The number of instances a leaf should observe between split attempts.",
             200, 0, Integer.MAX_VALUE);
 
-    public StringOption measureOffsetOption = new StringOption("measureOffset", 'o',
-            "Measure split offset.", "");
+
+    public FlagOption measureSplitOffsetOption = new FlagOption("measureOffset", 'M',
+            "Measure split offset.");
+
+    public StringOption uuidOption = new StringOption("uuidPrefix", 'o',
+            "uuidPrefix.", "");
 
 
     public ClassOption splitCriterionOption = new ClassOption("splitCriterion",
@@ -540,38 +544,31 @@ public class HoeffdingTree extends AbstractClassifier {
     public int measureByteSize() {
         System.out.println("attemptTime " + this.attemptToSplitTime/1000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + "s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
-        Map<String, String> env = System.getenv();
-        String dir = env.get("STORAGE_DIR") + "/Tmp/";
 
-        if (!measureOffsetOption.getValue().equals("")) {
+
+        if (measureSplitOffsetOption.isSet())
             System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));
+        if (!uuidOption.getValue().equals("")) {
+            Map<String, String> env = System.getenv();
+            String dir = env.get("STORAGE_DIR") + "/Tmp/";
             try {
-                String fileName = dir + "moaStatistics_" + measureOffsetOption.getValue() + ".csv";
+                String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
                 writer.println(String.format("totalTime;attemptTime;attempts;boundSplits;maxSplits;boundOffset;maxOffset"));
                 writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f", (this.trainOnInstanceTime + this.voteOnInstanceTime) / 1000., this.attemptToSplitTime / 1000., attempts,
                         boundSplits, maxSplits, Utils.mean(this.boundSplitErrors.getArrayRef()), Utils.mean(this.maxSplitErrors.getArrayRef())));
                 writer.close();
+
+                fileName = dir + "moaSplitNumSamples_" + uuidOption.getValue() + ".csv";
+                writer = new PrintWriter(new FileOutputStream(fileName, false));
+                writer.println(Utils.arrayToString(this.boundSplitNumSamples.getArrayRef()));
+                writer.close();
+
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             }
         }
 
-        try {
-            String fileName = dir + "moaStatistics.csv";
-            PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
-            writer.println(String.format("totalTime;attemptTime;attempts;boundSplits;maxSplits;boundOffset;maxOffset"));
-            writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f", (this.trainOnInstanceTime + this.voteOnInstanceTime) / 1000., this.attemptToSplitTime / 1000., attempts,
-                    boundSplits, maxSplits, Utils.mean(this.boundSplitErrors.getArrayRef()), Utils.mean(this.maxSplitErrors.getArrayRef())));
-            writer.close();
-
-            fileName = dir + "moaSplitNumSamples.csv";
-            writer = new PrintWriter(new FileOutputStream(fileName, false));
-            writer.println(Utils.arrayToString(this.boundSplitNumSamples.getArrayRef()));
-            writer.close();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        }
         return calcByteSize();
     }
 
@@ -675,7 +672,7 @@ public class HoeffdingTree extends AbstractClassifier {
         if (leafNode instanceof LearningNode) {
             LearningNode learningNode = (LearningNode) leafNode;
             learningNode.learnFromInstance(inst, this);
-            if (!measureOffsetOption.getValue().equals(""))
+            if (measureSplitOffsetOption.isSet())
                 this.singleFitMeasure(learningNode, foundNode.parent, foundNode.parentBranch);
             else
                 this.singleFit(learningNode, foundNode.parent, foundNode.parentBranch);
