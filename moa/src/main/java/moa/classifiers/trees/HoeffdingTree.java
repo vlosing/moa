@@ -570,7 +570,6 @@ public class HoeffdingTree extends AbstractClassifier {
                 e.printStackTrace();
             }
         }
-
         return calcByteSize();
     }
 
