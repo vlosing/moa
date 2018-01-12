@@ -552,7 +552,7 @@ public class HoeffdingTree extends AbstractClassifier {
             System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));
         if (!uuidOption.getValue().equals("")) {
             Map<String, String> env = System.getenv();
-            String dir = env.get("STORAGE_DIR") + "/Tmp/";
+            String dir = env.get("LOCAL_STORAGE_DIR") + "/Tmp/";
             try {
                 String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
