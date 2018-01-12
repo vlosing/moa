@@ -53,6 +53,7 @@ import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
 import com.github.javacliparser.StringOption;
 import java.util.Map;
+import java.util.Random;
 /**
  * Hoeffding Tree or VFDT.
  *
@@ -102,9 +103,9 @@ import java.util.Map;
 public class HoeffdingTree extends AbstractClassifier {
 
     private static final long serialVersionUID = 1L;
-    private static final int MAX_STEPS = 2000;
+    private static final int MAX_STEPS = 4000;
     private static final int MEASURE_GRACE_PERIOD = 5;
-    private static final int INITIAL_GRACE_PERIOD = 50;
+    private static final int INITIAL_GRACE_PERIOD = 200;
 
 
     @Override
@@ -192,6 +193,7 @@ public class HoeffdingTree extends AbstractClassifier {
     public DoubleVector boundSplitNumSamples = new DoubleVector();
 
     public DoubleVector maxSplitErrors = new DoubleVector();
+    private Random rand = new Random();
 
     public static class FoundNode {
 
@@ -215,8 +217,8 @@ public class HoeffdingTree extends AbstractClassifier {
         protected DoubleVector observedClassDistribution;
 
         public Node(double[] classObservations) {
-            this.observedClassDistribution = new DoubleVector(classObservations);
-            //this.observedClassDistribution = new DoubleVector();
+            //this.observedClassDistribution = new DoubleVector(classObservations);
+            this.observedClassDistribution = new DoubleVector();
         }
 
         public int calcByteSize() {
@@ -973,6 +975,8 @@ public class HoeffdingTree extends AbstractClassifier {
                         gracePeriod = HoeffdingTree.getAdaptiveGracePeriodNaive(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                     } else if (this.gracePeriodTypeOption.getChosenIndex() == 2) {
                         gracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
+                    } else if (this.gracePeriodTypeOption.getChosenIndex() == 3) {
+                        gracePeriod = rand.nextInt(MAX_STEPS - this.gracePeriodOption.getValue() + 1) + this.gracePeriodOption.getValue();
                     }
                     node.gracePeriod = (int) Math.ceil(Math.min(maxN, gracePeriod));
                 }
@@ -1157,10 +1161,11 @@ public class HoeffdingTree extends AbstractClassifier {
 
     public MultiChoiceOption gracePeriodTypeOption = new MultiChoiceOption(
             "gracePeriodType", 'a', "Grace period.", new String[]{
-            "EQ", "NI", "ME"}, new String[]{
+            "EQ", "NI", "ME", "RD"}, new String[]{
             "Equidistant",
             "Naive",
-            "Min entropy"}, 0);
+            "Min entropy",
+            "Random"}, 0);
 
     public IntOption nbThresholdOption = new IntOption(
             "nbThreshold",
