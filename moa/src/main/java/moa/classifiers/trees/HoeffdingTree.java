@@ -105,7 +105,7 @@ public class HoeffdingTree extends AbstractClassifier {
     private static final long serialVersionUID = 1L;
     private static final int MAX_STEPS = 4000;
     private static final int MEASURE_GRACE_PERIOD = 5;
-    private static final int INITIAL_GRACE_PERIOD = 200;
+    private static final int INITIAL_GRACE_PERIOD = 100;
 
 
     @Override
@@ -657,6 +657,7 @@ public class HoeffdingTree extends AbstractClassifier {
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
+        trainStepCount++;
         long startTime = System.currentTimeMillis();
         if (this.treeRoot == null) {
             this.treeRoot = newLearningNode();
@@ -922,8 +923,8 @@ public class HoeffdingTree extends AbstractClassifier {
         double[][] dists = bestSuggestion.resultingClassDistributions.clone();
         int maxClassIdx = Utils.maxIndex(dists[minEntropyIdx]);
         double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + HoeffdingTree.MAX_STEPS);
-
         dists[minEntropyIdx] = dists[minEntropyIdx].clone();
+
         dists[minEntropyIdx][maxClassIdx] += HoeffdingTree.MAX_STEPS;
         double tmpEntropy = InfoGainSplitCriterion.computeEntropy(dists);
         double result = HoeffdingTree.MAX_STEPS;
@@ -931,6 +932,40 @@ public class HoeffdingTree extends AbstractClassifier {
         if (secEntropy - tmpEntropy > delta){
             result = HoeffdingTree.Brent(0, (double)HoeffdingTree.MAX_STEPS, 0.5, 0.005, new OptFunction(),
                     bestSuggestion.resultingClassDistributions, minEntropyIdx, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
+        }
+        result = Math.ceil(Math.min(Math.max(gracePeriod, result), HoeffdingTree.MAX_STEPS));
+        return (int)result;
+    }
+
+    public static int getAdaptiveGracePeriodMinEntropyBinomial(AttributeSplitSuggestion bestSuggestion, AttributeSplitSuggestion secondBestSuggestion, double entropyRange, double splitConfidence, double numTrainSamples, double tieDelta, int gracePeriod){
+        double minEntropy = Double.MAX_VALUE;
+        int minEntropyIdx = 0;
+        for (int i = 0; i < bestSuggestion.resultingClassDistributions.length; i++){
+            double weight = Utils.sum(bestSuggestion.resultingClassDistributions[i]);
+            double entropy = InfoGainSplitCriterion.computeEntropy(bestSuggestion.resultingClassDistributions[i]);
+            if (entropy < minEntropy && weight > 0){
+                minEntropyIdx = i;
+                minEntropy = entropy;
+            }
+        }
+        double secEntropy = InfoGainSplitCriterion.computeEntropy(secondBestSuggestion.resultingClassDistributions);
+
+        double[][] dists = bestSuggestion.resultingClassDistributions.clone();
+        int maxClassIdx = Utils.maxIndex(dists[minEntropyIdx]);
+        double delta = computeHoeffdingBound(entropyRange, splitConfidence, numTrainSamples + HoeffdingTree.MAX_STEPS);
+        dists[minEntropyIdx] = dists[minEntropyIdx].clone();
+
+        dists[minEntropyIdx][maxClassIdx] += HoeffdingTree.MAX_STEPS;
+        double tmpEntropy = InfoGainSplitCriterion.computeEntropy(dists);
+        double result = HoeffdingTree.MAX_STEPS;
+
+        if (secEntropy - tmpEntropy > delta){
+            result = HoeffdingTree.Brent(0, (double)HoeffdingTree.MAX_STEPS, 0.5, 0.005, new OptFunction(),
+                    bestSuggestion.resultingClassDistributions, minEntropyIdx, maxClassIdx, secEntropy, entropyRange, splitConfidence, numTrainSamples);
+            //Binomial adaption
+            double p = bestSuggestion.resultingClassDistributions[minEntropyIdx][maxClassIdx]/(float)numTrainSamples;
+            result = result/p;
+
         }
         result = Math.ceil(Math.min(Math.max(gracePeriod, result), HoeffdingTree.MAX_STEPS));
         return (int)result;
@@ -954,17 +989,20 @@ public class HoeffdingTree extends AbstractClassifier {
             AttributeSplitSuggestion bestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 1];
             AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
             if ((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
-                    || (hoeffdingBound < this.tieThresholdOption.getValue())) {
+                    || hoeffdingBound < this.tieThresholdOption.getValue()) {
+                //if (hoeffdingBound < this.tieThresholdOption.getValue()) {
                 if (hoeffdingBound < this.tieThresholdOption.getValue()) {
                     this.maxSplits++;
                     splitResult = 2;
+                    //System.out.println(trainStepCount + " maxSplit " + bestSuggestion.merit + " " + secondBestSuggestion.merit + " " + " " + hoeffdingBound + " " + node.getWeightSeen() + " " + criterionRange);
                 }
                 else {
                     this.boundSplits++;
                     splitResult = 1;
-
+                    //System.out.println(trainStepCount + " boundSplit " + bestSuggestion.merit + " " + secondBestSuggestion.merit + " " + " " + hoeffdingBound + " " + node.getWeightSeen() + " " + criterionRange);
                 }
                 this.boundSplitNumSamples.addToValue(this.boundSplitNumSamples.numValues(), node.getWeightSeen() - node.initialWeight);
+
                 this.splitNode(node, parent, parentIndex, bestSuggestion);
             } else {
                 if (adaptGracePeriod) {
@@ -976,7 +1014,11 @@ public class HoeffdingTree extends AbstractClassifier {
                         gracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropy(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                     } else if (this.gracePeriodTypeOption.getChosenIndex() == 3) {
                         gracePeriod = rand.nextInt(MAX_STEPS - this.gracePeriodOption.getValue() + 1) + this.gracePeriodOption.getValue();
+                    } else if (this.gracePeriodTypeOption.getChosenIndex() == 4) {
+                        gracePeriod = HoeffdingTree.getAdaptiveGracePeriodMinEntropyBinomial(bestSuggestion, secondBestSuggestion, criterionRange, splitConfidenceOption.getValue(), node.getWeightSeen(), tieThresholdOption.getValue(), gracePeriodOption.getValue());
                     }
+                    //System.out.println(trainStepCount + " adapt " + bestSuggestion.merit + " " + secondBestSuggestion.merit + " " + gracePeriod + " " + hoeffdingBound + " " + node.getWeightSeen() + " " + criterionRange);
+
                     node.gracePeriod = (int) Math.ceil(Math.min(maxN, gracePeriod));
                 }
 
@@ -1160,11 +1202,12 @@ public class HoeffdingTree extends AbstractClassifier {
 
     public MultiChoiceOption gracePeriodTypeOption = new MultiChoiceOption(
             "gracePeriodType", 'a', "Grace period.", new String[]{
-            "EQ", "NI", "ME", "RD"}, new String[]{
+            "EQ", "NI", "ME", "RD", "ME2"}, new String[]{
             "Equidistant",
             "Naive",
             "Min entropy",
-            "Random"}, 0);
+            "Random",
+            "Min entropy2"}, 0);
 
     public IntOption nbThresholdOption = new IntOption(
             "nbThreshold",
