@@ -106,7 +106,8 @@ public class HoeffdingTree extends AbstractClassifier {
     private static final int MAX_STEPS = 4000;
     private static final int MEASURE_GRACE_PERIOD = 5;
     private static final int INITIAL_GRACE_PERIOD = 100;
-
+    private static int brentTotalIterations = 0;
+    private static int brentSearches = 0;
 
     @Override
     public String getPurposeString() {
@@ -546,7 +547,8 @@ public class HoeffdingTree extends AbstractClassifier {
     public int measureByteSize() {
         System.out.println("attemptTime " + this.attemptToSplitTime/1000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + "s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
-
+        if (this.gracePeriodTypeOption.getChosenIndex() == 2)
+            System.out.println("Brent searchs " + brentSearches + " iterations " + brentTotalIterations);
 
         if (measureSplitOffsetOption.isSet())
             System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));
@@ -825,10 +827,10 @@ public class HoeffdingTree extends AbstractClassifier {
         } // if
 
         mflag = 1;
-
+        brentSearches++;
         while ( (Math.abs(fb) > oEps) && ( Math.abs(b-a) > iEps))
         {
-
+            brentTotalIterations++;
             if ( (fa != fc) && fb != fc)
             {
                 c0 = a*fb*fc/((fa-fb)*(fa-fc));
