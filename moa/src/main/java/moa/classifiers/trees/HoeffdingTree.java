@@ -192,6 +192,7 @@ public class HoeffdingTree extends AbstractClassifier {
     public int trainStepCount=0;
     public DoubleVector boundSplitErrors = new DoubleVector();
     public DoubleVector boundSplitNumSamples = new DoubleVector();
+    public DoubleVector tieSplitNumSamples = new DoubleVector();
 
     public DoubleVector maxSplitErrors = new DoubleVector();
     private Random rand = new Random();
@@ -566,6 +567,7 @@ public class HoeffdingTree extends AbstractClassifier {
                 fileName = dir + "moaSplitNumSamples_" + uuidOption.getValue() + ".csv";
                 writer = new PrintWriter(new FileOutputStream(fileName, false));
                 writer.println(Utils.arrayToString(this.boundSplitNumSamples.getArrayRef()));
+                writer.println(Utils.arrayToString(this.tieSplitNumSamples.getArrayRef()));
                 writer.close();
 
             } catch (FileNotFoundException e) {
@@ -624,7 +626,7 @@ public class HoeffdingTree extends AbstractClassifier {
                 gracePeriod = HoeffdingTree.INITIAL_GRACE_PERIOD;
                 adaptGracePeriod = false;
             }
-            else if (activeLearningNode.getWeightSeenAtLastSplitEvaluation() < activeLearningNode.getInitialWeight() + this.gracePeriodOption.getValue()) {
+            else if (weightSeen < activeLearningNode.getInitialWeight() + this.gracePeriodOption.getValue()) {
                 adaptGracePeriod = false;
             }
             else {
@@ -651,8 +653,8 @@ public class HoeffdingTree extends AbstractClassifier {
                     else if (splitReturn == 2) {
                         this.maxSplitErrors.addToValue(this.maxSplitErrors.numValues(), Math.max(0., activeLearningNode.getGracePeriod()));
                     }
-                    activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
                 }
+                activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
             }
         }
     }
@@ -996,14 +998,16 @@ public class HoeffdingTree extends AbstractClassifier {
                 if (hoeffdingBound < this.tieThresholdOption.getValue()) {
                     this.maxSplits++;
                     splitResult = 2;
+                    this.tieSplitNumSamples.addToValue(this.tieSplitNumSamples.numValues(), node.getWeightSeen() - node.initialWeight);
                     //System.out.println(trainStepCount + " maxSplit " + bestSuggestion.merit + " " + secondBestSuggestion.merit + " " + " " + hoeffdingBound + " " + node.getWeightSeen() + " " + criterionRange);
                 }
                 else {
                     this.boundSplits++;
+                    this.boundSplitNumSamples.addToValue(this.boundSplitNumSamples.numValues(), node.getWeightSeen() - node.initialWeight);
                     splitResult = 1;
                     //System.out.println(trainStepCount + " boundSplit " + bestSuggestion.merit + " " + secondBestSuggestion.merit + " " + " " + hoeffdingBound + " " + node.getWeightSeen() + " " + criterionRange);
                 }
-                this.boundSplitNumSamples.addToValue(this.boundSplitNumSamples.numValues(), node.getWeightSeen() - node.initialWeight);
+
 
                 this.splitNode(node, parent, parentIndex, bestSuggestion);
             } else {
