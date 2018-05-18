@@ -19,6 +19,7 @@
  */
 package moa.classifiers.meta;
 
+import com.yahoo.labs.samoa.instances.InstancesHeader;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import com.yahoo.labs.samoa.instances.Instance;
@@ -74,6 +75,14 @@ public class OzaBoost extends AbstractClassifier {
     protected double[] scms;
 
     protected double[] swms;
+
+    @Override
+    public void setModelContext(InstancesHeader context) {
+        super.setModelContext(context);
+        for (int i = 0; i < this.ensemble.length; i++) {
+            this.ensemble[i].setModelContext(context);
+        }
+    }
 
     @Override
     public void resetLearningImpl() {

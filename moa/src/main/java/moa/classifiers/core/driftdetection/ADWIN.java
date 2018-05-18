@@ -407,6 +407,11 @@ public class ADWIN extends AbstractMOAObject {
         return (int) Math.pow(2, Row);
     }
 
+    public int getDeletionSize()
+    {
+        return bucketSize(lastBucketRow);
+    }
+
     public int deleteElement() {
         //LIST
         //Update statistics

@@ -15,18 +15,21 @@
  *    
  */
 package moa.classifiers.lazy;
-import java.util.*;
 
-import com.yahoo.labs.samoa.instances.InstanceImpl;
-import moa.classifiers.AbstractClassifier;
-import moa.core.Measurement;
+import com.github.javacliparser.FlagOption;
+import com.github.javacliparser.FloatOption;
+import com.github.javacliparser.IntOption;
 import com.yahoo.labs.samoa.instances.Instance;
+import com.yahoo.labs.samoa.instances.InstanceImpl;
 import com.yahoo.labs.samoa.instances.Instances;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
-import com.github.javacliparser.IntOption;
-import com.github.javacliparser.FloatOption;
-import com.github.javacliparser.FlagOption;
+import moa.classifiers.AbstractClassifier;
 import moa.clusterers.kmeanspm.CoresetKMeans;
+import moa.core.Measurement;
+import moa.core.Utils;
+
+import java.util.*;
+
 /**
  * Self Adjusting Memory (SAM) coupled with the k Nearest Neighbor classifier (kNN) .<p>
  *
@@ -52,7 +55,7 @@ import moa.clusterers.kmeanspm.CoresetKMeans;
  * month={Dec}
  * }"
  */
-public class SAMkNN extends AbstractClassifier {
+public class SAMkNN3 extends AbstractClassifier {
     private static final long serialVersionUID = 1L;
 
     public IntOption kOption = new IntOption( "k", 'k', "The number of neighbors", 5, 1, Integer.MAX_VALUE);
@@ -571,8 +574,8 @@ public class SAMkNN extends AbstractClassifier {
 		} else {
 			List<Integer> numSamplesRange = new ArrayList<>();
 			numSamplesRange.add(numSamples);
-			while (numSamplesRange.get(numSamplesRange.size() - 1) >= 2 * this.minSTMSizeOption.getValue())
-				numSamplesRange.add(numSamplesRange.get(numSamplesRange.size() - 1) / 2);
+			while (numSamplesRange.get(numSamplesRange.size() - 1) >= 1.2 * this.minSTMSizeOption.getValue())
+				numSamplesRange.add((int) (numSamplesRange.get(numSamplesRange.size() - 1) / 1.2));
 			List<Double> errorRates = new ArrayList<>();
 			for (Integer numSamplesIt : numSamplesRange) {
 				int idx = numSamples - numSamplesIt;
@@ -590,6 +593,8 @@ public class SAMkNN extends AbstractClassifier {
 				}
 				errorRates.add(this.getHistoryErrorRate(predHistory));
 			}
+
+			System.out.println(Utils.arrayToString(numSamplesRange.toArray()));
 			int minErrorRateIdx = errorRates.indexOf(Collections.min(errorRates));
 			if (minErrorRateIdx > 0) {
 				for (int i = 1; i < errorRates.size(); i++){

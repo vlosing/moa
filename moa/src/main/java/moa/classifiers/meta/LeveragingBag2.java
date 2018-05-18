@@ -19,21 +19,20 @@
  */
 package moa.classifiers.meta;
 
-import com.github.javacliparser.IntOption;
-import com.github.javacliparser.FloatOption;
 import com.github.javacliparser.FlagOption;
-import moa.options.ClassOption;
+import com.github.javacliparser.FloatOption;
+import com.github.javacliparser.IntOption;
 import com.github.javacliparser.MultiChoiceOption;
-import moa.classifiers.core.driftdetection.ADWIN;
+import com.yahoo.labs.samoa.instances.Instance;
+import com.yahoo.labs.samoa.instances.InstancesHeader;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
-import com.yahoo.labs.samoa.instances.Instance;
-
+import moa.classifiers.core.driftdetection.ADWIN;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
-import moa.options.*;
-import com.yahoo.labs.samoa.instances.InstancesHeader;
+import moa.options.ClassOption;
+import moa.classifiers.lazy.SAMkNN;
 /**
  * Leveraging Bagging for evolving data streams using ADWIN. Leveraging Bagging
  * and Leveraging Bagging MC using Random Output Codes ( -o option).
@@ -45,7 +44,7 @@ import com.yahoo.labs.samoa.instances.InstancesHeader;
  * @author Albert Bifet (abifet at cs dot waikato dot ac dot nz)
  * @version $Revision: 7 $
  */
-public class LeveragingBag extends AbstractClassifier {
+public class LeveragingBag2 extends AbstractClassifier {
 
     private static final long serialVersionUID = 1L;
 
@@ -55,7 +54,7 @@ public class LeveragingBag extends AbstractClassifier {
     }
 
     public ClassOption baseLearnerOption = new ClassOption("baseLearner", 'l',
-            "Classifier to train.", Classifier.class, "trees.HoeffdingTree");
+            "Classifier to train.", Classifier.class, "lazy.SAMkNN");
 
     public IntOption ensembleSizeOption = new IntOption("ensembleSize", 's',
             "The number of models in the bag.", 10, 1, Integer.MAX_VALUE);
@@ -82,13 +81,12 @@ public class LeveragingBag extends AbstractClassifier {
 
     protected Classifier[] ensemble;
 
-    protected ADWIN[] ADError;
-
     protected int numberOfChangesDetected;
 
     protected int[][] matrixCodes;
 
     protected boolean initMatrixCodes = false;
+    int noCount = 0;
 
     @Override
     public void setModelContext(InstancesHeader context) {
@@ -102,14 +100,14 @@ public class LeveragingBag extends AbstractClassifier {
     public void resetLearningImpl() {
         System.out.println("resetLearningImpl");
         this.ensemble = new Classifier[this.ensembleSizeOption.getValue()];
-        Classifier baseLearner = (Classifier) getPreparedClassOption(this.baseLearnerOption);
-        baseLearner.resetLearning();
+        SAMkNN baseLearner = (SAMkNN) getPreparedClassOption(this.baseLearnerOption);
+
         for (int i = 0; i < this.ensemble.length; i++) {
             this.ensemble[i] = baseLearner.copy();
-        }
-        this.ADError = new ADWIN[this.ensemble.length];
-        for (int i = 0; i < this.ensemble.length; i++) {
-            this.ADError[i] = new ADWIN((double) this.deltaAdwinOption.getValue());
+            //this.ensemble[i].setRandomSeed(i*100);
+            this.ensemble[i].resetLearning();
+
+            //System.out.println(((SAMkNN2)this.ensemble[i]).limitOption.getValue() + " " + ((SAMkNN2)this.ensemble[i]).minSTMSizeOption.getValue() + " " +                    ((SAMkNN2)this.ensemble[i]).randomSeed);
         }
         this.numberOfChangesDetected = 0;
         if (this.outputCodesOption.isSet()) {
@@ -119,38 +117,6 @@ public class LeveragingBag extends AbstractClassifier {
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
-        int numClasses = inst.numClasses();
-        //Output Codes
-        if (this.initMatrixCodes == true) {
-            this.matrixCodes = new int[this.ensemble.length][inst.numClasses()];
-            for (int i = 0; i < this.ensemble.length; i++) {
-                int numberOnes;
-                int numberZeros;
-
-                do { // until we have the same number of zeros and ones
-                    numberOnes = 0;
-                    numberZeros = 0;
-                    for (int j = 0; j < numClasses; j++) {
-                        int result = 0;
-                        if (j == 1 && numClasses == 2) {
-                            result = 1 - this.matrixCodes[i][0];
-                        } else {
-                            result = (this.classifierRandom.nextBoolean() ? 1 : 0);
-                        }
-                        this.matrixCodes[i][j] = result;
-                        if (result == 1) {
-                            numberOnes++;
-                        } else {
-                            numberZeros++;
-                        }
-                    }
-                } while ((numberOnes - numberZeros) * (numberOnes - numberZeros) > (this.ensemble.length % 2));
-
-            }
-            this.initMatrixCodes = false;
-        }
-
-
         boolean Change = false;
         Instance weightedInst = (Instance) inst.copy();
         double w = this.weightShrinkOption.getValue();
@@ -161,10 +127,6 @@ public class LeveragingBag extends AbstractClassifier {
             switch (this.leveraginBagAlgorithmOption.getChosenIndex()) {
                 case 0: //LeveragingBag
                     k = MiscUtils.poisson(w, this.classifierRandom);
-                    break;
-                case 1: //LeveragingBagME
-                    double error = this.ADError[i].getEstimation();
-                    k = !this.ensemble[i].correctlyClassifies(weightedInst) ? 1.0 : (this.classifierRandom.nextDouble() < (error / (1.0 - error)) ? 1.0 : 0.0);
                     break;
                 case 2: //LeveragingBagHalf
                     w = 1.0;
@@ -181,35 +143,11 @@ public class LeveragingBag extends AbstractClassifier {
                     break;
             }
             if (k > 0) {
-                if (this.outputCodesOption.isSet()) {
-                    weightedInst.setClassValue((double) this.matrixCodes[i][(int) inst.classValue()]);
-                }
                 weightedInst.setWeight(inst.weight() * k);
                 this.ensemble[i].trainOnInstance(weightedInst);
-            }
-            boolean correctlyClassifies = this.ensemble[i].correctlyClassifies(weightedInst);
-            double ErrEstim = this.ADError[i].getEstimation();
-            if (this.ADError[i].setInput(correctlyClassifies ? 0 : 1)) {
-                if (this.ADError[i].getEstimation() > ErrEstim) {
-                    Change = true;
-                }
-            }
-        }
-        if (Change) {
-            numberOfChangesDetected++;
-            double max = 0.0;
-            int imax = -1;
-            for (int i = 0; i < this.ensemble.length; i++) {
-                if (max < this.ADError[i].getEstimation()) {
-                    max = this.ADError[i].getEstimation();
-                    imax = i;
-                }
-            }
-            if (imax != -1) {
-                this.ensemble[imax].resetLearning();
-                this.ensemble[imax].setModelContext(this.modelContext);
-                //this.ensemble[imax].trainOnInstance(inst);
-                this.ADError[imax] = new ADWIN((double) this.deltaAdwinOption.getValue());
+            }else {
+                noCount++;
+                //System.out.println(noCount);
             }
         }
     }

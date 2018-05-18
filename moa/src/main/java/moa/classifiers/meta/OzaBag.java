@@ -28,7 +28,7 @@ import moa.core.Measurement;
 import moa.core.MiscUtils;
 import moa.options.ClassOption;
 import com.github.javacliparser.IntOption;
-
+import com.yahoo.labs.samoa.instances.InstancesHeader;
 /**
  * Incremental on-line bagging of Oza and Russell.
  *
@@ -65,6 +65,15 @@ public class OzaBag extends AbstractClassifier {
             "The number of models in the bag.", 10, 1, Integer.MAX_VALUE);
 
     protected Classifier[] ensemble;
+
+
+    @Override
+    public void setModelContext(InstancesHeader context) {
+        super.setModelContext(context);
+        for (int i = 0; i < this.ensemble.length; i++) {
+            this.ensemble[i].setModelContext(context);
+        }
+    }
 
     @Override
     public void resetLearningImpl() {

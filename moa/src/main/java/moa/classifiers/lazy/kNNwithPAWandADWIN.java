@@ -62,6 +62,7 @@ public class kNNwithPAWandADWIN extends kNN {
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
+
         if (inst.classValue() > C) {
             C = (int) inst.classValue();
         }
@@ -73,20 +74,24 @@ public class kNNwithPAWandADWIN extends kNN {
         if (this.timeStamp == null) {
             this.timeStamp = new ArrayList<Integer>(10);
         }
+
         for (int i = 0; i < this.window.size(); i++) {
             if (this.classifierRandom.nextDouble() > this.prob) {
                 this.window.delete(i);
                 this.timeStamp.remove(i);
             }
         }
+        boolean correctlyClassifies = this.correctlyClassifies(inst);
         this.window.add(inst);
         this.timeStamp.add(this.time);
         this.time++;
-        boolean correctlyClassifies = this.correctlyClassifies(inst);
+
         if (this.adwin.setInput(correctlyClassifies ? 0 : 1)) {
             //Change
             int size = (int) this.adwin.getWidth();
+            System.out.println(size);
             for (int i = 0; i < this.window.size(); i++) {
+
                 if (this.timeStamp.get(i) < this.time - size) {
                     this.window.delete(i);
                     this.timeStamp.remove(i);

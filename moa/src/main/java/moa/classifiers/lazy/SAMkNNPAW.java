@@ -15,18 +15,20 @@
  *    
  */
 package moa.classifiers.lazy;
-import java.util.*;
 
-import com.yahoo.labs.samoa.instances.InstanceImpl;
-import moa.classifiers.AbstractClassifier;
-import moa.core.Measurement;
+import com.github.javacliparser.FlagOption;
+import com.github.javacliparser.FloatOption;
+import com.github.javacliparser.IntOption;
 import com.yahoo.labs.samoa.instances.Instance;
+import com.yahoo.labs.samoa.instances.InstanceImpl;
 import com.yahoo.labs.samoa.instances.Instances;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
-import com.github.javacliparser.IntOption;
-import com.github.javacliparser.FloatOption;
-import com.github.javacliparser.FlagOption;
+import moa.classifiers.AbstractClassifier;
 import moa.clusterers.kmeanspm.CoresetKMeans;
+import moa.core.Measurement;
+
+import java.util.*;
+
 /**
  * Self Adjusting Memory (SAM) coupled with the k Nearest Neighbor classifier (kNN) .<p>
  *
@@ -52,7 +54,7 @@ import moa.clusterers.kmeanspm.CoresetKMeans;
  * month={Dec}
  * }"
  */
-public class SAMkNN extends AbstractClassifier {
+public class SAMkNNPAW extends AbstractClassifier {
     private static final long serialVersionUID = 1L;
 
     public IntOption kOption = new IntOption( "k", 'k', "The number of neighbors", 5, 1, Integer.MAX_VALUE);
@@ -82,6 +84,7 @@ public class SAMkNN extends AbstractClassifier {
 	private List<Integer> stmHistory;
 	private List<Integer> ltmHistory;
 	private List<Integer> cmHistory;
+	protected double prob;
 	private double[][] distanceMatrixSTM;
 	//private int trainStepCount;
 	private Map<Integer, List<Integer>> predictionHistories;
@@ -127,6 +130,7 @@ public class SAMkNN extends AbstractClassifier {
 		this.cmHistory = null;
 		this.distanceMatrixSTM = null;
 		this.predictionHistories = null;
+		this.prob = Math.pow(2.0, -1.0 / this.limitOption.getValue());
     }
 
     @Override
