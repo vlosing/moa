@@ -19,20 +19,26 @@
  */
 package moa.classifiers.meta;
 
-import com.github.javacliparser.FlagOption;
-import com.github.javacliparser.FloatOption;
-import com.github.javacliparser.IntOption;
-import com.github.javacliparser.MultiChoiceOption;
+import com.github.javacliparser.*;
 import com.yahoo.labs.samoa.instances.Instance;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import moa.classifiers.core.driftdetection.ADWIN;
+import moa.classifiers.lazy.SAMkNNFS;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
+import moa.core.Utils;
 import moa.options.ClassOption;
 import moa.classifiers.lazy.SAMkNN;
+
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Map;
+
 /**
  * Leveraging Bagging for evolving data streams using ADWIN. Leveraging Bagging
  * and Leveraging Bagging MC using Random Output Codes ( -o option).
@@ -54,7 +60,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     }
 
     public ClassOption baseLearnerOption = new ClassOption("baseLearner", 'l',
-            "Classifier to train.", Classifier.class, "lazy.SAMkNN");
+            "Classifier to train.", Classifier.class, "lazy.SAMkNNFS");
 
     public IntOption ensembleSizeOption = new IntOption("ensembleSize", 's',
             "The number of models in the bag.", 10, 1, Integer.MAX_VALUE);
@@ -65,9 +71,6 @@ public class LeveragingBag2 extends AbstractClassifier {
     public FloatOption deltaAdwinOption = new FloatOption("deltaAdwin", 'a',
             "Delta of Adwin change detection", 0.002, 0.0, 1.0);
 
-    // Leveraging Bagging MC: uses this option to use Output Codes
-    public FlagOption outputCodesOption = new FlagOption("outputCodes", 'o',
-            "Use Output Codes to use binary classifiers.");
 
     public MultiChoiceOption leveraginBagAlgorithmOption = new MultiChoiceOption(
             "leveraginBagAlgorithm", 'm', "Leveraging Bagging to use.", new String[]{
@@ -79,7 +82,11 @@ public class LeveragingBag2 extends AbstractClassifier {
                 "Leveraging Subagging using resampling without replacement."
             }, 0);
 
+    public StringOption uuidOption = new StringOption("uuidPrefix", 'o',
+            "uuidPrefix.", "");
     protected Classifier[] ensemble;
+    private ArrayList<Integer>[] ensembleLabels;
+    private double lamdas[];
 
     protected int numberOfChangesDetected;
 
@@ -87,12 +94,64 @@ public class LeveragingBag2 extends AbstractClassifier {
 
     protected boolean initMatrixCodes = false;
     int noCount = 0;
+    protected ADWIN[] ADError;
 
+    public FlagOption eraseMembers = new FlagOption("eraseMembers", 'y',
+            "eraseMembers");
+
+    public FlagOption useAdwin = new FlagOption("useAdwin", 'n',
+            "useAdwin");
+
+    public FlagOption disableWeightedVote = new FlagOption("disableWeightedVote", 'd',
+            "Should use weighted voting?");
+
+    public FlagOption randomizeLamda = new FlagOption("randomizeLamda", 'z',
+            "randomizeLamda");
+
+    public FlagOption randomizeK = new FlagOption("randomizeK", 'k',
+            "randomizeFeatures");
+
+    public FlagOption randomizeFeatures = new FlagOption("randomizeFeatures", 'f',
+            "randomizeFeatures");
+
+    public FlagOption randomizeDistanceMetric = new FlagOption("randomizeDistanceMetric", 'e',
+            "randomizeDistanceMetric");
+    public FlagOption randomizWeighting = new FlagOption("randomizWeighting", 'g',
+            "randomizeWeighting");
+
+
+    public void randomizeEnsembleMember(SAMkNNFS member, int index) {
+        member.randomMeta = this.classifierRandom;
+        if (randomizeK.isSet()){
+            member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
+            System.out.println(member.kOption.getValue());
+        }
+        if (randomizeFeatures.isSet()){
+            member.randomizeFeatures = true;
+        }
+        if (randomizeDistanceMetric.isSet()){
+            member.distanceMetricOption.setChosenIndex(this.classifierRandom.nextInt(2));
+            System.out.println(member.distanceMetricOption.getChosenLabel());
+        }
+        if (randomizWeighting.isSet()){
+            if (this.classifierRandom.nextInt(2) == 1)
+                member.uniformWeightedOption.set();
+            System.out.println(member.uniformWeightedOption.isSet());
+        }
+        if (randomizeLamda.isSet()){
+            lamdas[index] = Math.max(this.classifierRandom.nextDouble()*6, + 0.2);
+            System.out.println(lamdas[index]);
+        }
+    }
+    public int trainstepCount = 0;
     @Override
     public void setModelContext(InstancesHeader context) {
         super.setModelContext(context);
         for (int i = 0; i < this.ensemble.length; i++) {
             this.ensemble[i].setModelContext(context);
+            if (this.ensemble[i] instanceof SAMkNNFS){
+                randomizeEnsembleMember((SAMkNNFS)this.ensemble[i], i);
+            }
         }
     }
 
@@ -100,29 +159,36 @@ public class LeveragingBag2 extends AbstractClassifier {
     public void resetLearningImpl() {
         System.out.println("resetLearningImpl");
         this.ensemble = new Classifier[this.ensembleSizeOption.getValue()];
-        SAMkNN baseLearner = (SAMkNN) getPreparedClassOption(this.baseLearnerOption);
-
+        ensembleLabels = new ArrayList[this.ensembleSizeOption.getValue()];
+        lamdas = new double[this.ensembleSizeOption.getValue()];
+        Classifier baseLearner = (Classifier) getPreparedClassOption(this.baseLearnerOption);
+        if (useAdwin.isSet()) {
+            this.ADError = new ADWIN[this.ensemble.length];
+            for (int i = 0; i < this.ensemble.length; i++) {
+                this.ADError[i] = new ADWIN((double) this.deltaAdwinOption.getValue());
+            }
+        }
         for (int i = 0; i < this.ensemble.length; i++) {
+            lamdas[i] = weightShrinkOption.getValue();
+            ensembleLabels[i] = new ArrayList();
             this.ensemble[i] = baseLearner.copy();
             //this.ensemble[i].setRandomSeed(i*100);
             this.ensemble[i].resetLearning();
-
             //System.out.println(((SAMkNN2)this.ensemble[i]).limitOption.getValue() + " " + ((SAMkNN2)this.ensemble[i]).minSTMSizeOption.getValue() + " " +                    ((SAMkNN2)this.ensemble[i]).randomSeed);
         }
         this.numberOfChangesDetected = 0;
-        if (this.outputCodesOption.isSet()) {
-            this.initMatrixCodes = true;
-        }
     }
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
         boolean Change = false;
+        trainstepCount ++;
         Instance weightedInst = (Instance) inst.copy();
-        double w = this.weightShrinkOption.getValue();
+
 
         //Train ensemble of classifiers
         for (int i = 0; i < this.ensemble.length; i++) {
+            double w = lamdas[i];
             double k = 0.0;
             switch (this.leveraginBagAlgorithmOption.getChosenIndex()) {
                 case 0: //LeveragingBag
@@ -149,51 +215,109 @@ public class LeveragingBag2 extends AbstractClassifier {
                 noCount++;
                 //System.out.println(noCount);
             }
+            if (useAdwin.isSet()) {
+                boolean correctlyClassifies = this.ensemble[i].correctlyClassifies(weightedInst);
+                double ErrEstim = this.ADError[i].getEstimation();
+                if (this.ADError[i].setInput(correctlyClassifies ? 0 : 1)) {
+                    if (this.ADError[i].getEstimation() > ErrEstim) {
+                        Change = true;
+                    }
+                }
+            }
         }
+        if (Change) {
+            numberOfChangesDetected++;
+            double max = 0.0;
+            int imax = -1;
+            for (int i = 0; i < this.ensemble.length; i++) {
+                if (max < this.ADError[i].getEstimation()) {
+                    max = this.ADError[i].getEstimation();
+                    imax = i;
+                }
+            }
+            if (imax != -1) {
+                System.out.println("change and remove " + imax);
+                this.ensemble[imax].resetLearning();
+                this.ensemble[imax].setModelContext(this.modelContext);
+                if (this.ensemble[imax] instanceof SAMkNNFS){
+                    randomizeEnsembleMember((SAMkNNFS)this.ensemble[imax], imax);
+                }
+
+                //this.ensemble[imax].trainOnInstance(inst);
+                this.ADError[imax] = new ADWIN((double) this.deltaAdwinOption.getValue());
+            }
+        }
+        if (eraseMembers.isSet() && trainstepCount%2000 == 0 && (this.ensemble[0] instanceof SAMkNNFS)) {
+            double max = 0.0;
+            int imax = -1;
+            for (int i = 0; i < this.ensemble.length; i++) {
+                double acc = ((SAMkNNFS) this.ensemble[i]).accCurrentConcept;
+
+                if (max < 1- acc) {
+                    max = 1- acc;
+                    imax = i;
+                }
+            }
+            if (imax != -1) {
+                System.out.println("remove " + imax + " " + max);
+                this.ensemble[imax].resetLearning();
+                this.ensemble[imax].setModelContext(this.modelContext);
+                if (this.ensemble[imax] instanceof SAMkNNFS){
+                    randomizeEnsembleMember((SAMkNNFS)this.ensemble[imax], imax);
+                }
+            }
+        }
+
+
     }
 
     @Override
     public double[] getVotesForInstance(Instance inst) {
-        if (this.outputCodesOption.isSet()) {
-            return getVotesForInstanceBinary(inst);
-        }
         DoubleVector combinedVote = new DoubleVector();
-        for (int i = 0; i < this.ensemble.length; i++) {
-            DoubleVector vote = new DoubleVector(this.ensemble[i].getVotesForInstance(inst));
+        for(int i = 0 ; i < this.ensemble.length ; ++i) {
+            double[] voteTmp = this.ensemble[i].getVotesForInstance(inst);
+            DoubleVector vote = new DoubleVector(voteTmp);
+            ensembleLabels[i].add(moa.core.Utils.maxIndex(voteTmp));
             if (vote.sumOfValues() > 0.0) {
                 vote.normalize();
-                combinedVote.addValues(vote);
+                if (this.ensemble[i] instanceof SAMkNNFS) {
+                    double acc = ((SAMkNNFS) this.ensemble[i]).accCurrentConcept;
+                    if (!this.disableWeightedVote.isSet() && acc > 0.0) {
+                        for (int v = 0; v < vote.numValues(); ++v) {
+                            vote.setValue(v, vote.getValue(v) * acc);
+                        }
+                    }
+                    combinedVote.addValues(vote);
+                }else{
+                    for (int v = 0; v < vote.numValues(); ++v) {
+                        vote.setValue(v, vote.getValue(v));
+                    }
+                    combinedVote.addValues(vote);
+                }
             }
         }
         return combinedVote.getArrayRef();
     }
 
-    public double[] getVotesForInstanceBinary(Instance inst) {
-        double combinedVote[] = new double[(int) inst.numClasses()];
-        Instance weightedInst = (Instance) inst.copy();
-        if (this.initMatrixCodes == false) {
-            for (int i = 0; i < this.ensemble.length; i++) {
-                //Replace class by OC
-                weightedInst.setClassValue((double) this.matrixCodes[i][(int) inst.classValue()]);
+    @Override
+    public int measureByteSize() {
+        if (!uuidOption.getValue().equals("")) {
+            Map<String, String> env = System.getenv();
+            String dir = env.get("LOCAL_STORAGE_DIR") + "/Tmp/";
+            try {
+                String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
+                PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
+                for (int i= 0; i < ensembleLabels.length; i++){
+                    writer.println(Utils.arrayToString(this.ensembleLabels[i].toArray()));
+                }
+                writer.close();
 
-                double vote[];
-                vote = this.ensemble[i].getVotesForInstance(weightedInst);
-                //Binary Case
-                int voteClass = 0;
-                if (vote.length == 2) {
-                    voteClass = (vote[1] > vote[0] ? 1 : 0);
-                }
-                //Update votes
-                for (int j = 0; j < inst.numClasses(); j++) {
-                    if (this.matrixCodes[i][j] == voteClass) {
-                        combinedVote[j] += 1;
-                    }
-                }
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
             }
         }
-        return combinedVote;
+        return super.measureByteSize();
     }
-
     @Override
     public boolean isRandomizable() {
         return true;

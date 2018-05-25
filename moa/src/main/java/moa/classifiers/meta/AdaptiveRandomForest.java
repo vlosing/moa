@@ -268,7 +268,8 @@ public class AdaptiveRandomForest extends AbstractClassifier {
         // m > n, then it should use n
         if(this.subspaceSize > n)
             this.subspaceSize = n;
-        
+
+        System.out.println(this.subspaceSize);
         ARFHoeffdingTree treeLearner = (ARFHoeffdingTree) getPreparedClassOption(this.treeLearnerOption);
         treeLearner.resetLearning();
         

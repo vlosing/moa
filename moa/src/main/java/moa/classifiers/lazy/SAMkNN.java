@@ -103,7 +103,6 @@ public class SAMkNN extends AbstractClassifier {
 	@Override
 	public void setModelContext(InstancesHeader context) {
     	super.setModelContext(context);
-    	System.out.println("setModelContext");
 		try {
 			this.stm = new Instances(context,0);
 			this.stm.setClassIndex(context.classIndex());
@@ -119,7 +118,6 @@ public class SAMkNN extends AbstractClassifier {
 
     @Override
     public void resetLearningImpl() {
-		System.out.println("setModelContext");
 		this.stm = null;
 		this.ltm = null;
 		this.stmHistory = null;

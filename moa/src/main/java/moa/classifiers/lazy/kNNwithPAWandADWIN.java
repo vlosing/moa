@@ -89,7 +89,6 @@ public class kNNwithPAWandADWIN extends kNN {
         if (this.adwin.setInput(correctlyClassifies ? 0 : 1)) {
             //Change
             int size = (int) this.adwin.getWidth();
-            System.out.println(size);
             for (int i = 0; i < this.window.size(); i++) {
 
                 if (this.timeStamp.get(i) < this.time - size) {

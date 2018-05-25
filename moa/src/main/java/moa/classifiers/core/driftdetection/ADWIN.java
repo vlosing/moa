@@ -316,7 +316,7 @@ public class ADWIN extends AbstractMOAObject {
 
     private int BucketNumberMAX = 0;
 
-    private int mintMinWinLength = 5;
+    private int mintMinWinLength = 16;
 
     private List listRowBuckets;
 
@@ -521,6 +521,7 @@ public class ADWIN extends AbstractMOAObject {
                         u0 += cursor.Total(k);
                         u1 -= cursor.Total(k);
 
+
                         if (i == 0 && k == cursor.bucketSizeRow - 1) {
                             blnExit = true;
                             break;
@@ -548,6 +549,7 @@ public class ADWIN extends AbstractMOAObject {
                                 blnExit = true;
                                 break;
                             }
+
                         } //End if
                     }//Next k
                     cursor = cursor.previous();
@@ -571,6 +573,8 @@ public class ADWIN extends AbstractMOAObject {
         double m = ((double) 1 / ((n0 - mintMinWinLength + 1))) + ((double) 1 / ((n1 - mintMinWinLength + 1)));
         double epsilon = Math.sqrt(2 * m * v * dd) + (double) 2 / 3 * dd * m;
 
+        /*if (Math.abs(absvalue) > epsilon)
+            System.out.println("adwin " + getWidth() + " " + n0 + " " + n1 + " " + u0 + " " + u1 + " " + epsilon + " " + absvalue + " " + v);*/
         return (Math.abs(absvalue) > epsilon);
     }
 
