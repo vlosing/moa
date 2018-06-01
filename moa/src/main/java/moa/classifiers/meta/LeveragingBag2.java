@@ -95,9 +95,10 @@ public class LeveragingBag2 extends AbstractClassifier {
     protected boolean initMatrixCodes = false;
     int noCount = 0;
     protected ADWIN[] ADError;
+    protected ADWIN adwin;
 
-    public FlagOption eraseMembers = new FlagOption("eraseMembers", 'y',
-            "eraseMembers");
+    public IntOption eraseMembers = new IntOption("eraseMembers", 'y',
+            "eraseMembers", 0, 0, 2);
 
     public FlagOption useAdwin = new FlagOption("useAdwin", 'n',
             "useAdwin");
@@ -162,6 +163,9 @@ public class LeveragingBag2 extends AbstractClassifier {
         ensembleLabels = new ArrayList[this.ensembleSizeOption.getValue()];
         lamdas = new double[this.ensembleSizeOption.getValue()];
         Classifier baseLearner = (Classifier) getPreparedClassOption(this.baseLearnerOption);
+
+        this.adwin = new ADWIN(this.deltaAdwinOption.getValue());
+
         if (useAdwin.isSet()) {
             this.ADError = new ADWIN[this.ensemble.length];
             for (int i = 0; i < this.ensemble.length; i++) {
@@ -184,7 +188,7 @@ public class LeveragingBag2 extends AbstractClassifier {
         boolean Change = false;
         trainstepCount ++;
         Instance weightedInst = (Instance) inst.copy();
-
+        boolean correct = this.correctlyClassifies(inst);
 
         //Train ensemble of classifiers
         for (int i = 0; i < this.ensemble.length; i++) {
@@ -247,27 +251,33 @@ public class LeveragingBag2 extends AbstractClassifier {
                 this.ADError[imax] = new ADWIN((double) this.deltaAdwinOption.getValue());
             }
         }
-        if (eraseMembers.isSet() && trainstepCount%2000 == 0 && (this.ensemble[0] instanceof SAMkNNFS)) {
-            double max = 0.0;
-            int imax = -1;
-            for (int i = 0; i < this.ensemble.length; i++) {
-                double acc = ((SAMkNNFS) this.ensemble[i]).accCurrentConcept;
+        double ErrEstim = 0;
+        if (eraseMembers.getValue() == 2)
+            ErrEstim = this.adwin.getEstimation();
 
-                if (max < 1- acc) {
-                    max = 1- acc;
-                    imax = i;
+        if ((eraseMembers.getValue() == 1 && trainstepCount%2000 == 0) || (eraseMembers.getValue() == 2 && this.adwin.setInput(correct ? 0 : 1) && this.adwin.getEstimation() > ErrEstim)){
+            if (this.ensemble[0] instanceof SAMkNNFS){
+                double max = 0.0;
+                int imax = -1;
+                for (int i = 0; i < this.ensemble.length; i++) {
+                    double error = 1 - ((SAMkNNFS) this.ensemble[i]).accCurrentConcept;
+                    if (max < error) {
+                        max = error;
+                        imax = i;
+                    }
                 }
-            }
-            if (imax != -1) {
-                System.out.println("remove " + imax + " " + max);
-                this.ensemble[imax].resetLearning();
-                this.ensemble[imax].setModelContext(this.modelContext);
-                if (this.ensemble[imax] instanceof SAMkNNFS){
-                    randomizeEnsembleMember((SAMkNNFS)this.ensemble[imax], imax);
+                if (imax != -1) {
+                    System.out.println(trainstepCount + " remove " + imax);
+                    if (eraseMembers.getValue() == 2)
+                        System.out.println("adwin width " + adwin.getWidth());
+                    this.ensemble[imax].resetLearning();
+                    this.ensemble[imax].setModelContext(this.modelContext);
+                    if (this.ensemble[imax] instanceof SAMkNNFS){
+                        randomizeEnsembleMember((SAMkNNFS)this.ensemble[imax], imax);
+                    }
                 }
             }
         }
-
 
     }
 

@@ -151,6 +151,7 @@ public class SAMkNNFS extends AbstractClassifier {
 		this.cmHistory = null;
 		this.distanceMatrixSTM = null;
 		this.predictionHistories = null;
+		this.listAttributes = null;
     }
 
     @Override

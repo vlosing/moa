@@ -546,7 +546,7 @@ public class HoeffdingTree extends AbstractClassifier {
 
     @Override
     public int measureByteSize() {
-        System.out.println("attemptTime " + this.attemptToSplitTime/1000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000. + "s");
+        System.out.println("attemptTime " + this.attemptToSplitTime/1000000000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000000000. + "s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
         if (this.splitTimePredictionOption.getChosenIndex() == 2)
             System.out.println("Brent searchs " + brentSearches + " iterations " + brentTotalIterations);
@@ -560,7 +560,7 @@ public class HoeffdingTree extends AbstractClassifier {
                 String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
                 writer.println(String.format("totalTime;attemptTime;attempts;boundSplits;maxSplits;boundOffset;maxOffset"));
-                writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f", (this.trainOnInstanceTime + this.voteOnInstanceTime) / 1000., this.attemptToSplitTime / 1000., attempts,
+                writer.println(String.format("%.2f;%.2f;%d;%d;%d;%.2f;%.2f", (this.trainOnInstanceTime + this.voteOnInstanceTime) / 1000000000., this.attemptToSplitTime / 1000000000., attempts,
                         boundSplits, maxSplits, Utils.mean(this.boundSplitErrors.getArrayRef()), Utils.mean(this.maxSplitErrors.getArrayRef())));
                 writer.close();
 
@@ -662,7 +662,7 @@ public class HoeffdingTree extends AbstractClassifier {
     @Override
     public void trainOnInstanceImpl(Instance inst) {
         trainStepCount++;
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
         if (this.treeRoot == null) {
             this.treeRoot = newLearningNode();
             this.activeLeafNodeCount = 1;
@@ -688,12 +688,13 @@ public class HoeffdingTree extends AbstractClassifier {
                 % this.memoryEstimatePeriodOption.getValue() == 0) {
             estimateModelByteSizes();
         }
-        this.trainOnInstanceTime += System.currentTimeMillis() - startTime;
+        long stopTime = System.nanoTime();
+        this.trainOnInstanceTime += stopTime - startTime;
     }
 
     @Override
     public double[] getVotesForInstance(Instance inst) {
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
         if (this.treeRoot != null) {
             FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst,
                     null, -1);
@@ -701,11 +702,13 @@ public class HoeffdingTree extends AbstractClassifier {
             if (leafNode == null) {
                 leafNode = foundNode.parent;
             }
-            this.voteOnInstanceTime += System.currentTimeMillis() - startTime;
+            long stopTime = System.nanoTime();
+            this.voteOnInstanceTime += stopTime - startTime;
             return leafNode.getClassVotes(inst, this);
           } else {
             int numClasses = inst.dataset().numClasses();
-            this.voteOnInstanceTime += System.currentTimeMillis() - startTime;
+            long stopTime = System.nanoTime();
+            this.voteOnInstanceTime += stopTime - startTime;
             return new double[numClasses];
           }
 
@@ -941,7 +944,7 @@ public class HoeffdingTree extends AbstractClassifier {
     }
 
     protected int attemptToSplit(ActiveLearningNode node, SplitNode parent, int parentIndex, boolean adaptGracePeriod) {
-        double startTime = System.currentTimeMillis();
+        double startTime = System.nanoTime();
 
         SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
         AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
@@ -1017,7 +1020,8 @@ public class HoeffdingTree extends AbstractClassifier {
                 }
             }
         }
-        this.attemptToSplitTime += System.currentTimeMillis() - startTime;
+        long stopTime = System.nanoTime();
+        this.attemptToSplitTime += stopTime - startTime;
         return splitResult;
     }
 
