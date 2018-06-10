@@ -76,6 +76,8 @@ public interface Learner<E extends Example> extends MOAObject, OptionHandler, AW
      */
     public void resetLearning();
 
+    public void afterLearning();
+
     /**
      * Trains this learner incrementally using the given example.
      *

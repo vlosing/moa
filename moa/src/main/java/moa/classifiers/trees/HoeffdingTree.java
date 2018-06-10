@@ -105,7 +105,7 @@ public class HoeffdingTree extends AbstractClassifier {
     private static final long serialVersionUID = 1L;
     private static final int MAX_STEPS = 100000;
     private static final int MEASURE_GRACE_PERIOD = 5;
-    private static final int INITIAL_GRACE_PERIOD = 100;
+    private static final int INITIAL_GRACE_PERIOD = 50;
     private static int brentTotalIterations = 0;
     private static int brentSearches = 0;
 
@@ -606,7 +606,7 @@ public class HoeffdingTree extends AbstractClassifier {
 
                 if (!activeLearningNode.observedClassDistributionIsPure()) {
                     this.attempts++;
-                    attemptToSplit(activeLearningNode, parent, parentBranch, true);
+                    attemptToSplit(activeLearningNode, parent, parentBranch, weightSeen >= INITIAL_GRACE_PERIOD);
                 }
                 activeLearningNode.setWeightSeenAtLastSplitEvaluation(weightSeen);
             }

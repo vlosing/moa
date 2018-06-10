@@ -104,6 +104,8 @@ public class SAMkNNFS extends AbstractClassifier {
 	private List<Integer> cmHistory;
 	private float[][] distanceMatrixSTM;
 	public boolean randomizeFeatures = false;
+	private float[] lastVotedInstanceDistancesSTM;
+	private Instance lastVotedInstance;
 
 
 	//private int trainStepCount;
@@ -124,6 +126,17 @@ public class SAMkNNFS extends AbstractClassifier {
 		this.predictionHistories = new HashMap<>();
     }
 
+	@Override
+	public void afterLearning(){
+		this.stm = null;
+		this.ltm = null;
+		this.stmHistory = null;
+		this.ltmHistory = null;
+		this.cmHistory = null;
+		this.distanceMatrixSTM = null;
+		this.predictionHistories = null;
+		this.listAttributes = null;
+	}
 
 
 	@Override
@@ -186,10 +199,6 @@ public class SAMkNNFS extends AbstractClassifier {
 				}
 			}
 
-
-
-
-
 		}
         //this.trainStepCount++;
 		if (inst.classValue() > maxClassValue)
@@ -197,9 +206,21 @@ public class SAMkNNFS extends AbstractClassifier {
 		this.stm.add(inst);
 		memorySizeCheck();
 		clean(this.stm, this.ltm, true);
-		float distancesSTM[] = this.get1ToNDistances(inst, this.stm, this.listAttributes);
-		for (int i =0; i < this.stm.numInstances();i++){
-			this.distanceMatrixSTM[this.stm.numInstances()-1][i] = distancesSTM[i];
+		float distancesSTM[];
+		if (inst == lastVotedInstance){
+			distancesSTM = lastVotedInstanceDistancesSTM;
+			for (int i =0; i < this.stm.numInstances()-1;i++){
+				this.distanceMatrixSTM[this.stm.numInstances()-1][i] = distancesSTM[i];
+
+			}
+			this.distanceMatrixSTM[this.stm.numInstances()-1][this.stm.numInstances()-1] = 0;
+		}
+		else{
+			distancesSTM = this.get1ToNDistances(inst, this.stm, this.listAttributes);
+			for (int i =0; i < this.stm.numInstances();i++){
+				this.distanceMatrixSTM[this.stm.numInstances()-1][i] = distancesSTM[i];
+			}
+
 		}
 		int oldWindowSize = this.stm.numInstances();
 
@@ -251,6 +272,8 @@ public class SAMkNNFS extends AbstractClassifier {
 		try {
 			if (this.stm.numInstances()>0) {
 				distancesSTM = get1ToNDistances(inst, this.stm, this.listAttributes);
+				lastVotedInstance = inst;
+				lastVotedInstanceDistancesSTM = distancesSTM;
 				int nnIndicesSTM[] = nArgMin(Math.min(distancesSTM.length, this.kOption.getValue()), distancesSTM);
 				vSTM = getDistanceWeightedVotes(distancesSTM, nnIndicesSTM, this.stm);
                 predClassSTM = this.getClassFromVotes(vSTM);

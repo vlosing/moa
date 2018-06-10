@@ -85,6 +85,10 @@ public abstract class AbstractClassifier extends AbstractOptionHandler
     }
 
     @Override
+    public void afterLearning(){
+
+    }
+    @Override
     public void prepareForUseImpl(TaskMonitor monitor,
             ObjectRepository repository) {
         if (this.randomSeedOption != null) {

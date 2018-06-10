@@ -192,9 +192,11 @@ public class EvaluatePrequential extends MainTask {
                 && ((maxInstances < 0) || (instancesProcessed < maxInstances))
                 && ((maxSeconds < 0) || (secondsElapsed < maxSeconds))) {
             Example trainInst = stream.nextInstance();
+
+
             Example testInst = (Example) trainInst; //.copy();
             //testInst.setClassMissing();
-            double[] prediction = learner.getVotesForInstance(testInst);
+            double[] prediction = learner.getVotesForInstance(trainInst);
             // Output prediction
             if (outputPredictionFile != null) {
                 int trueClass = (int) ((Instance) trainInst.getData()).classValue();
@@ -204,7 +206,7 @@ public class EvaluatePrequential extends MainTask {
 
             //evaluator.addClassificationAttempt(trueClass, prediction, testInst.weight());
             evaluator.addResult(testInst, prediction);
-            learner.trainOnInstance(trainInst);
+            learner.trainOnInstance(testInst);
             instancesProcessed++;
             if (instancesProcessed % this.sampleFrequencyOption.getValue() == 0
                     || stream.hasMoreInstances() == false) {
@@ -230,7 +232,7 @@ public class EvaluatePrequential extends MainTask {
                             RAMHours)
                         },
                         evaluator, learner));
-
+                learner.afterLearning();
                 if (immediateResultStream != null) {
                     if (firstDump) {
                         immediateResultStream.println(learningCurve.headerToString());

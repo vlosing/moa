@@ -141,6 +141,8 @@ public class AdaptiveRandomForest extends AbstractClassifier {
     @Override
     public void resetLearningImpl() {
         // Init statistics
+        if (this.executor != null)
+            this.executor.shutdown();
         this.instancesSeen = 0;
         this.evaluator = new BasicClassificationPerformanceEvaluator();
         int numberOfJobs;
@@ -152,6 +154,7 @@ public class AdaptiveRandomForest extends AbstractClassifier {
         // this.executor will be null and not used...
         if(numberOfJobs != AdaptiveRandomForest.SINGLE_THREAD && numberOfJobs != 1)
             this.executor = Executors.newFixedThreadPool(numberOfJobs);
+
     }
 
     @Override
