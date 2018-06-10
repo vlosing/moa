@@ -214,6 +214,7 @@ public class LeveragingBag extends AbstractClassifier {
         }
     }
 
+
     @Override
     public double[] getVotesForInstance(Instance inst) {
         if (this.outputCodesOption.isSet()) {

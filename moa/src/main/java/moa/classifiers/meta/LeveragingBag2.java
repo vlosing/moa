@@ -184,6 +184,15 @@ public class LeveragingBag2 extends AbstractClassifier {
         if(numberOfJobs > 1)
             this.executor = Executors.newFixedThreadPool(numberOfJobs);
     }
+    @Override
+    public void afterLearning(){
+        for (int i = 0; i < this.ensemble.length; i++) {
+            this.ensemble[i].afterLearning();
+        }
+        if (executor!=null){
+            executor.shutdown();
+        }
+    }
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
