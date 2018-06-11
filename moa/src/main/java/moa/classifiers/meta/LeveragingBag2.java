@@ -21,6 +21,7 @@ package moa.classifiers.meta;
 
 import com.github.javacliparser.*;
 import com.yahoo.labs.samoa.instances.Instance;
+import com.yahoo.labs.samoa.instances.InstanceInformation;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
@@ -86,6 +87,9 @@ public class LeveragingBag2 extends AbstractClassifier {
     public IntOption numberOfJobsOption = new IntOption("numberOfJobs", 'j',
             "Total number of concurrent jobs used for processing (-1 = as much as possible, 0 = do not use multithreading)", 1, -1, Integer.MAX_VALUE);
 
+    public FlagOption asynchronousMode = new FlagOption("asynchronousMode", 'A',
+            "Asynchronous multi-threading execution");
+
     public StringOption uuidOption = new StringOption("uuidPrefix", 'o',
             "uuidPrefix.", "");
     protected SAMkNNFS[] ensemble;
@@ -98,6 +102,7 @@ public class LeveragingBag2 extends AbstractClassifier {
 
     protected boolean initMatrixCodes = false;
     int noCount = 0;
+
     protected ADWIN adwin;
 
     public IntOption eraseMembers = new IntOption("eraseMembers", 'y',
@@ -121,14 +126,17 @@ public class LeveragingBag2 extends AbstractClassifier {
             "randomizeWeighting");
 
     private ExecutorService executor;
-    public void randomizeEnsembleMember(SAMkNNFS member, int index) {
-        member.randomMeta = this.classifierRandom;
+    private Collection<Future<Integer>> trainFutures = new ArrayList<>();
+
+    public void randomizeEnsembleMember(SAMkNNFS member, int index, int numAttributes) {
         if (randomizeK.isSet()){
             member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
             System.out.println(member.kOption.getValue());
         }
         if (randomizeFeatures.isSet()){
-            member.randomizeFeatures = true;
+            int n = numAttributes-1;
+            int nFeatures = Math.min((int) ((Math.round(n * 0.7) + 1)), n) ;
+            member.randomizeFeatures(nFeatures, n, this.classifierRandom);
         }
         if (randomizeDistanceMetric.isSet()){
             member.distanceMetricOption.setChosenIndex(this.classifierRandom.nextInt(2));
@@ -152,7 +160,8 @@ public class LeveragingBag2 extends AbstractClassifier {
         super.setModelContext(context);
         for (int i = 0; i < this.ensemble.length; i++) {
             this.ensemble[i].setModelContext(context);
-            randomizeEnsembleMember(this.ensemble[i], i);
+            System.out.println(context.getInstanceInformation().numAttributes());
+            randomizeEnsembleMember(this.ensemble[i], i, context.getInstanceInformation().numAttributes());
         }
     }
 
@@ -198,7 +207,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     public void trainOnInstanceImpl(Instance inst) {
         trainstepCount ++;
         boolean correct = this.correctlyClassifies(inst);
-        Collection<LeveragingBag2.TrainingRunnable> trainers = new ArrayList<>();
+        //
         //Train ensemble of classifiers
         for (int i = 0; i < this.ensemble.length; i++) {
             double w = lamdas[i];
@@ -223,9 +232,10 @@ public class LeveragingBag2 extends AbstractClassifier {
             }
             if (k > 0) {
                 if(this.executor != null) {
-                    LeveragingBag2.TrainingRunnable trainer = new LeveragingBag2.TrainingRunnable(this.ensemble[i],
-                            inst);
-                    trainers.add(trainer);
+                    if (asynchronousMode.isSet())
+                        this.executor.submit(new TrainingRunnable(this.ensemble[i], inst));
+                    else
+                        trainFutures.add(this.executor.submit(new TrainingRunnable(this.ensemble[i], inst)));
                 }
                 else { // SINGLE_THREAD is in-place...
                     this.ensemble[i].trainOnInstance(inst);
@@ -235,13 +245,13 @@ public class LeveragingBag2 extends AbstractClassifier {
                 //System.out.println(noCount);
             }
         }
-        if(this.executor != null) {
+        /*if(this.executor != null) {
             try {
                 this.executor.invokeAll(trainers);
             } catch (InterruptedException ex) {
                 throw new RuntimeException("Could not call invokeAll() on training threads.");
             }
-        }
+        }*/
         double ErrEstim = 0;
         if (eraseMembers.getValue() == 2)
             ErrEstim = this.adwin.getEstimation();
@@ -250,7 +260,7 @@ public class LeveragingBag2 extends AbstractClassifier {
             double max = 0.0;
             int imax = -1;
             for (int i = 0; i < this.ensemble.length; i++) {
-                double error = 1 - ((SAMkNNFS) this.ensemble[i]).accCurrentConcept;
+                double error = 1 - this.ensemble[i].accCurrentConcept;
                 if (max < error) {
                     max = error;
                     imax = i;
@@ -262,7 +272,7 @@ public class LeveragingBag2 extends AbstractClassifier {
                     System.out.println("adwin width " + adwin.getWidth());
                 this.ensemble[imax].resetLearning();
                 this.ensemble[imax].setModelContext(this.modelContext);
-                randomizeEnsembleMember(this.ensemble[imax], imax);
+                randomizeEnsembleMember(this.ensemble[imax], imax, inst.numAttributes());
             }
         }
     }
@@ -290,39 +300,72 @@ public class LeveragingBag2 extends AbstractClassifier {
                     }
                 }
             } else {
-                Collection<LeveragingBag2.VotingRunnable> tasks = new ArrayList<>();
-                for (int i = 0; i < this.ensemble.length; ++i) {
-                    LeveragingBag2.VotingRunnable task = new LeveragingBag2.VotingRunnable(this.ensemble[i],
-                            inst);
-                    tasks.add(task);
-                }
-                try {
-                    List<Future<double[]>> futures = this.executor.invokeAll(tasks);
-                    int idx = 0;
-                    for (Future<double[]> future : futures) {
-                        DoubleVector vote = new DoubleVector(future.get());
-                        if (vote.sumOfValues() > 0.0) {
-                            vote.normalize();
-                            double acc = this.ensemble[idx].accCurrentConcept;
-                            if (!this.disableWeightedVote.isSet() && acc > 0.0) {
-                                for (int v = 0; v < vote.numValues(); ++v) {
-                                    vote.setValue(v, vote.getValue(v) * acc);
-                                }
-                            }
-                            combinedVote.addValues(vote);
-                        }
-                        idx++;
+                //finish training
+                if (asynchronousMode.isSet())
+                {
+                    Collection<VotingRunnable> tasks = new ArrayList<>();
+                    for (int i = 0; i < this.ensemble.length; ++i) {
+                        VotingRunnable task = new VotingRunnable(this.ensemble[i],
+                                inst);
+                        tasks.add(task);
                     }
-                } catch (InterruptedException|ExecutionException ex) {
-                    throw new RuntimeException("Could not call invokeAll() on threads.");
+                    try {
+                        DoubleVector vote = new DoubleVector(this.executor.invokeAny(tasks));
+                        if (vote.sumOfValues() > 0.0)
+                            vote.normalize();
+                        combinedVote.addValues(vote);
+                    }
+                    catch (InterruptedException|ExecutionException ex) {
+                        throw new RuntimeException(ex.getMessage());
+                    }
                 }
+                else{
+                    try {
+                        for (Future<Integer> future : trainFutures) {
+                            if (!future.isDone())
+                                future.get();
+                        }
+                    }
+                    catch (InterruptedException|ExecutionException ex) {
+                        throw new RuntimeException(ex.getMessage());
+                    }
+                    trainFutures.clear();
+                    Collection<VotingRunnable> tasks = new ArrayList<>();
+                    for (int i = 0; i < this.ensemble.length; ++i) {
+                        VotingRunnable task = new VotingRunnable(this.ensemble[i],
+                                inst);
+                        tasks.add(task);
+                    }
+                    try {
+                        List<Future<double[]>> futures = this.executor.invokeAll(tasks);
+                        int idx = 0;
+                        for (Future<double[]> future : futures) {
+                            DoubleVector vote = new DoubleVector(future.get());
+                            if (vote.sumOfValues() > 0.0) {
+                                vote.normalize();
+                                double acc = this.ensemble[idx].accCurrentConcept;
+                                if (!this.disableWeightedVote.isSet() && acc > 0.0) {
+                                    for (int v = 0; v < vote.numValues(); ++v) {
+                                        vote.setValue(v, vote.getValue(v) * acc);
+                                    }
+                                }
+                                combinedVote.addValues(vote);
+                            }
+                            idx++;
+                        }
+                    } catch (InterruptedException|ExecutionException ex) {
+                        throw new RuntimeException("Could not call invokeAll() on threads.");
+                    }
+                }
+
+
+
 
             }
             lastVotedInstance = inst;
             lastVotes = combinedVote.getArrayRef();
             return lastVotes;
         }
-
     }
 
     @Override
@@ -369,7 +412,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     /***
      * Inner class to assist with the multi-thread execution.
      */
-    protected class TrainingRunnable implements Runnable, Callable<Integer> {
+    protected class TrainingRunnable implements Callable<Integer> {
         final private SAMkNNFS learner;
         final private Instance instance;
 
@@ -379,18 +422,13 @@ public class LeveragingBag2 extends AbstractClassifier {
         }
 
         @Override
-        public void run() {
-            learner.trainOnInstance(this.instance);
-        }
-
-        @Override
         public Integer call() throws Exception {
-            run();
+            learner.trainOnInstance(this.instance);
             return 0;
         }
     }
 
-    protected class VotingRunnable implements Runnable, Callable<double[]> {
+    protected class VotingRunnable implements Callable<double[]> {
         final private SAMkNNFS learner;
         final private Instance instance;
         double[] votes;
@@ -400,13 +438,8 @@ public class LeveragingBag2 extends AbstractClassifier {
         }
 
         @Override
-        public void run() {
-            votes = learner.getVotesForInstance(this.instance);
-        }
-
-        @Override
         public double[] call() throws Exception {
-            run();
+            votes = learner.getVotesForInstance(this.instance);
             return votes;
         }
     }

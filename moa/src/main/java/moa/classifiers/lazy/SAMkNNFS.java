@@ -148,11 +148,36 @@ public class SAMkNNFS extends AbstractClassifier {
 			this.ltm = new Instances(context,0);
 			this.ltm.setClassIndex(context.classIndex());
 			this.init();
+
+			this.numAttributes = context.getInstanceInformation().numAttributes()-1;
+			this.listAttributes = new int[this.numAttributes];
+			for (int j = 0; j < this.numAttributes; j++) {
+				listAttributes[j] = j;
+			}
 		} catch(Exception e) {
 			System.err.println("Error: no Model Context available.");
 			e.printStackTrace();
 			System.exit(1);
 		}
+	}
+
+	public void randomizeFeatures(int nAttributes, int nTotalAttributes, Random rnd){
+		this.numAttributes = nAttributes;
+		this.listAttributes = new int[this.numAttributes];
+		for (int j = 0; j < this.numAttributes; j++) {
+			boolean isUnique = false;
+			while (!isUnique) {
+				this.listAttributes[j] = rnd.nextInt(nTotalAttributes);
+				isUnique = true;
+				for (int i = 0; i < j; i++) {
+					if (this.listAttributes[j] == this.listAttributes[i]) {
+						isUnique = false;
+						break;
+					}
+				}
+			}
+		}
+		System.out.println(this.numAttributes + "/" + nTotalAttributes + " - " + Utils.arrayToString(this.listAttributes));
 	}
 
     @Override
@@ -169,37 +194,6 @@ public class SAMkNNFS extends AbstractClassifier {
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
-		if (this.listAttributes == null) {
-			this.accCurrentConcept = 1/(float)inst.numClasses();
-			int n = inst.numAttributes()-1;
-			//this.numAttributes = (int) Math.round(Math.sqrt(n)) + 1;
-			if (randomizeFeatures) {
-				this.numAttributes = (int) ((Math.round(n * 0.7) + 1));
-				this.numAttributes = Math.min(this.numAttributes, n);
-				this.listAttributes = new int[this.numAttributes];
-				for (int j = 0; j < this.numAttributes; j++) {
-					boolean isUnique = false;
-					while (isUnique == false) {
-						this.listAttributes[j] = randomMeta.nextInt(inst.numAttributes() - 1);
-						isUnique = true;
-						for (int i = 0; i < j; i++) {
-							if (this.listAttributes[j] == this.listAttributes[i]) {
-								isUnique = false;
-								break;
-							}
-						}
-					}
-				}
-				System.out.println(this.numAttributes + "/" + (inst.numAttributes()-1) + " - " + Utils.arrayToString(this.listAttributes));
-			}else{
-				this.numAttributes = n;
-				this.listAttributes = new int[this.numAttributes];
-				for (int j = 0; j < this.numAttributes; j++) {
-					listAttributes[j] = j;
-				}
-			}
-
-		}
         //this.trainStepCount++;
 		if (inst.classValue() > maxClassValue)
 			maxClassValue = (int)inst.classValue();
