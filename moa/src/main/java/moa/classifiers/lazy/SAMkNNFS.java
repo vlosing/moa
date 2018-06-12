@@ -31,7 +31,9 @@ import moa.core.Measurement;
 import moa.core.Utils;
 
 import java.util.*;
-
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 /**
  * Self Adjusting Memory (SAM) coupled with the k Nearest Neighbor classifier (kNN) .<p>
  *
@@ -95,6 +97,7 @@ public class SAMkNNFS extends AbstractClassifier {
         return "SAMkNN: special.";
     }
 
+	private ExecutorService executor;
     private Instances stm;
 	private Instances ltm;
 	private int maxLTMSize;
@@ -124,6 +127,7 @@ public class SAMkNNFS extends AbstractClassifier {
     	//store calculated STM distances in a matrix to avoid recalculation, are reused in the STM adaption phase
 		this.distanceMatrixSTM = new float[limitOption.getValue()+1][limitOption.getValue()+1];
 		this.predictionHistories = new HashMap<>();
+		this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
 
 	@Override
@@ -136,7 +140,11 @@ public class SAMkNNFS extends AbstractClassifier {
 		this.distanceMatrixSTM = null;
 		this.predictionHistories = null;
 		this.listAttributes = null;
+		if (executor!=null){
+			executor.shutdown();
+		}
 	}
+
 
 
 	@Override
@@ -210,7 +218,7 @@ public class SAMkNNFS extends AbstractClassifier {
 			this.distanceMatrixSTM[this.stm.numInstances()-1][this.stm.numInstances()-1] = 0;
 		}
 		else{
-			distancesSTM = this.get1ToNDistances(inst, this.stm, this.listAttributes);
+			distancesSTM = this.get1ToNDistanceMulti(inst, this.stm, this.listAttributes);
 			for (int i =0; i < this.stm.numInstances();i++){
 				this.distanceMatrixSTM[this.stm.numInstances()-1][i] = distancesSTM[i];
 			}
@@ -265,13 +273,13 @@ public class SAMkNNFS extends AbstractClassifier {
         int predClassCM = 0;
 		try {
 			if (this.stm.numInstances()>0) {
-				distancesSTM = get1ToNDistances(inst, this.stm, this.listAttributes);
+				distancesSTM = get1ToNDistanceMulti(inst, this.stm, this.listAttributes);
 				lastVotedInstance = inst;
 				lastVotedInstanceDistancesSTM = distancesSTM;
 				int nnIndicesSTM[] = nArgMin(Math.min(distancesSTM.length, this.kOption.getValue()), distancesSTM);
 				vSTM = getDistanceWeightedVotes(distancesSTM, nnIndicesSTM, this.stm);
                 predClassSTM = this.getClassFromVotes(vSTM);
-                distancesLTM = get1ToNDistances(inst, this.ltm, this.listAttributes);
+                distancesLTM = get1ToNDistanceMulti(inst, this.ltm, this.listAttributes);
                 vCM = getCMVotes(distancesSTM, this.stm, distancesLTM, this.ltm);
                 predClassCM = this.getClassFromVotes(vCM);
 				if (this.ltm.numInstances() >= 0) {
@@ -411,10 +419,10 @@ public class SAMkNNFS extends AbstractClassifier {
 	private void cleanSingle(Instances cleanAgainst, int cleanAgainstindex, Instances toClean){
 		Instances cleanAgainstTmp = new Instances(cleanAgainst);
 		cleanAgainstTmp.delete(cleanAgainstindex);
-		float distancesSTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp, this.listAttributes);
+		float distancesSTM[] = get1ToNDistanceMulti(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp, this.listAttributes);
 		int nnIndicesSTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesSTM.length), distancesSTM);
 
-		float distancesLTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), toClean, this.listAttributes);
+		float distancesLTM[] = get1ToNDistanceMulti(cleanAgainst.get(cleanAgainstindex), toClean, this.listAttributes);
 		int nnIndicesLTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesLTM.length), distancesLTM);
 		double distThreshold = 0;
 		for (int nnIdx: nnIndicesSTM){
@@ -573,7 +581,6 @@ public class SAMkNNFS extends AbstractClassifier {
 		}
 		else
 		{
-
 			return getEuclideanDistance(sample, sample2, listAttributes);
 		}
 	}
@@ -762,5 +769,67 @@ public class SAMkNNFS extends AbstractClassifier {
 			return this.getMinErrorRateWindowSize();
 		else
 			return this.getMinErrorRateWindowSizeIncremental();
+	}
+
+
+	private float[] get1ToNDistanceMulti(Instance sample, Instances samples, int[] listAttributes){
+		Collection<distanceTask> tasks = new ArrayList<>();
+
+		float distances[] = new float[samples.numInstances()];
+		for (int i=0; i < samples.numInstances(); i++){
+			distanceTask task = new distanceTask(sample, samples.get(i), listAttributes, this);
+			//test t = new test(i);
+			tasks.add(task);
+		}
+		try {
+			List<Future<Float>> futures = executor.invokeAll(tasks);
+			int idx = 0;
+			for (Future<Float> future : futures) {
+				distances[idx] = future.get();
+				idx++;
+			}
+			/*List<Future<Integer>> futures = executor.invokeAll(tasks);
+			int idx = 0;
+			for (Future<Integer> future : futures) {
+				distances[idx]=future.get();
+				System.out.println(distances[idx]);
+				idx++;
+			}*/
+		} catch (InterruptedException|ExecutionException ex) {
+			throw new RuntimeException("Could not call invokeAll() on threads.");
+		}
+		return distances;
+	}
+
+	protected class distanceTask implements Callable<Float> {
+		final private int[] listAttributes;
+		final private Instance sample2;
+		final private Instance sample;
+		final SAMkNNFS learner;
+
+		public distanceTask(Instance sample, Instance sample2, int[] listAttributes, SAMkNNFS learner) {
+			this.sample = sample;
+			this.sample2 = sample2;
+			this.listAttributes = listAttributes;
+			this.learner = learner;
+		}
+
+		@Override
+		public Float call() throws Exception {
+			return learner.getDistance(sample, sample2, listAttributes);
+		}
+	}
+
+	protected class test implements Callable<Integer> {
+		final private int idx;
+
+		public test(int idx) {
+			this.idx = idx;
+		}
+
+		@Override
+		public Integer call() throws Exception {
+			return idx;
+		}
 	}
 }
