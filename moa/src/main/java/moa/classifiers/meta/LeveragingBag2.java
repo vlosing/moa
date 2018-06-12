@@ -126,7 +126,7 @@ public class LeveragingBag2 extends AbstractClassifier {
             "randomizeWeighting");
 
     private ExecutorService executor;
-    private Collection<Future<Integer>> trainFutures = new ArrayList<>();
+
 
     public void randomizeEnsembleMember(SAMkNNFS member, int index, int numAttributes) {
         if (randomizeK.isSet()){
@@ -207,7 +207,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     public void trainOnInstanceImpl(Instance inst) {
         trainstepCount ++;
         boolean correct = this.correctlyClassifies(inst);
-        //
+        Collection<TrainingRunnable> tasks = new ArrayList<>();
         //Train ensemble of classifiers
         for (int i = 0; i < this.ensemble.length; i++) {
             double w = lamdas[i];
@@ -235,7 +235,7 @@ public class LeveragingBag2 extends AbstractClassifier {
                     if (asynchronousMode.isSet())
                         this.executor.submit(new TrainingRunnable(this.ensemble[i], inst));
                     else
-                        trainFutures.add(this.executor.submit(new TrainingRunnable(this.ensemble[i], inst)));
+                        tasks.add(new TrainingRunnable(this.ensemble[i], inst));
                 }
                 else { // SINGLE_THREAD is in-place...
                     this.ensemble[i].trainOnInstance(inst);
@@ -245,13 +245,13 @@ public class LeveragingBag2 extends AbstractClassifier {
                 //System.out.println(noCount);
             }
         }
-        /*if(this.executor != null) {
+        if(this.executor != null) {
             try {
-                this.executor.invokeAll(trainers);
+                this.executor.invokeAll(tasks);
             } catch (InterruptedException ex) {
-                throw new RuntimeException("Could not call invokeAll() on training threads.");
+                throw new RuntimeException(ex.getMessage());
             }
-        }*/
+        }
         double ErrEstim = 0;
         if (eraseMembers.getValue() == 2)
             ErrEstim = this.adwin.getEstimation();
@@ -301,66 +301,32 @@ public class LeveragingBag2 extends AbstractClassifier {
                 }
             } else {
                 //finish training
-                if (asynchronousMode.isSet())
-                {
-                    Collection<VotingRunnable> tasks = new ArrayList<>();
-                    for (int i = 0; i < this.ensemble.length; ++i) {
-                        VotingRunnable task = new VotingRunnable(this.ensemble[i],
-                                inst);
-                        tasks.add(task);
-                    }
-                    try {
-                        DoubleVector vote = new DoubleVector(this.executor.invokeAny(tasks));
-                        if (vote.sumOfValues() > 0.0)
+                Collection<VotingRunnable> tasks = new ArrayList<>();
+                for (int i = 0; i < this.ensemble.length; ++i) {
+                    VotingRunnable task = new VotingRunnable(this.ensemble[i],
+                            inst);
+                    tasks.add(task);
+                }
+                try {
+                    List<Future<double[]>> futures = this.executor.invokeAll(tasks);
+                    int idx = 0;
+                    for (Future<double[]> future : futures) {
+                        DoubleVector vote = new DoubleVector(future.get());
+                        if (vote.sumOfValues() > 0.0) {
                             vote.normalize();
-                        combinedVote.addValues(vote);
-                    }
-                    catch (InterruptedException|ExecutionException ex) {
-                        throw new RuntimeException(ex.getMessage());
-                    }
-                }
-                else{
-                    try {
-                        for (Future<Integer> future : trainFutures) {
-                            if (!future.isDone())
-                                future.get();
-                        }
-                    }
-                    catch (InterruptedException|ExecutionException ex) {
-                        throw new RuntimeException(ex.getMessage());
-                    }
-                    trainFutures.clear();
-                    Collection<VotingRunnable> tasks = new ArrayList<>();
-                    for (int i = 0; i < this.ensemble.length; ++i) {
-                        VotingRunnable task = new VotingRunnable(this.ensemble[i],
-                                inst);
-                        tasks.add(task);
-                    }
-                    try {
-                        List<Future<double[]>> futures = this.executor.invokeAll(tasks);
-                        int idx = 0;
-                        for (Future<double[]> future : futures) {
-                            DoubleVector vote = new DoubleVector(future.get());
-                            if (vote.sumOfValues() > 0.0) {
-                                vote.normalize();
-                                double acc = this.ensemble[idx].accCurrentConcept;
-                                if (!this.disableWeightedVote.isSet() && acc > 0.0) {
-                                    for (int v = 0; v < vote.numValues(); ++v) {
-                                        vote.setValue(v, vote.getValue(v) * acc);
-                                    }
+                            double acc = this.ensemble[idx].accCurrentConcept;
+                            if (!this.disableWeightedVote.isSet() && acc > 0.0) {
+                                for (int v = 0; v < vote.numValues(); ++v) {
+                                    vote.setValue(v, vote.getValue(v) * acc);
                                 }
-                                combinedVote.addValues(vote);
                             }
-                            idx++;
+                            combinedVote.addValues(vote);
                         }
-                    } catch (InterruptedException|ExecutionException ex) {
-                        throw new RuntimeException("Could not call invokeAll() on threads.");
+                        idx++;
                     }
+                } catch (InterruptedException|ExecutionException ex) {
+                    throw new RuntimeException("Could not call invokeAll() on threads.");
                 }
-
-
-
-
             }
             lastVotedInstance = inst;
             lastVotes = combinedVote.getArrayRef();

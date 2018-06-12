@@ -67,8 +67,8 @@ public class SAMkNNFS extends AbstractClassifier {
 
     public IntOption kOption = new IntOption( "k", 'k', "The number of neighbors", 5, 1, Integer.MAX_VALUE);
 
-    public FlagOption uniformWeightedOption = new FlagOption("uniformWeightedOption", 'u',
-			"uniformWeightedOption");
+    public FlagOption uniformWeightedOption = new FlagOption("uniformWeighted", 'u',
+			"uniformWeighted");
 
     public IntOption limitOption = new IntOption( "limit", 'w', "The maximum number of instances to store", 5000, 1, Integer.MAX_VALUE);
     public IntOption minSTMSizeOption = new IntOption( "minSTMSize", 'm', "The minimum number of instances in the STM", 50, 1, Integer.MAX_VALUE);
@@ -116,7 +116,6 @@ public class SAMkNNFS extends AbstractClassifier {
 	private int[] listAttributes;
 	public float accCurrentConcept;
 	protected int numAttributes;
-	public Random randomMeta;
 
     protected void init(){
     	this.maxLTMSize = (int)(relativeLTMSizeOption.getValue() * limitOption.getValue());
@@ -144,8 +143,6 @@ public class SAMkNNFS extends AbstractClassifier {
 			executor.shutdown();
 		}
 	}
-
-
 
 	@Override
 	public void setModelContext(InstancesHeader context) {
@@ -218,7 +215,7 @@ public class SAMkNNFS extends AbstractClassifier {
 			this.distanceMatrixSTM[this.stm.numInstances()-1][this.stm.numInstances()-1] = 0;
 		}
 		else{
-			distancesSTM = this.get1ToNDistanceMulti(inst, this.stm, this.listAttributes);
+			distancesSTM = this.get1ToNDistances(inst, this.stm, this.listAttributes);
 			for (int i =0; i < this.stm.numInstances();i++){
 				this.distanceMatrixSTM[this.stm.numInstances()-1][i] = distancesSTM[i];
 			}
@@ -273,13 +270,13 @@ public class SAMkNNFS extends AbstractClassifier {
         int predClassCM = 0;
 		try {
 			if (this.stm.numInstances()>0) {
-				distancesSTM = get1ToNDistanceMulti(inst, this.stm, this.listAttributes);
+				distancesSTM = get1ToNDistances(inst, this.stm, this.listAttributes);
 				lastVotedInstance = inst;
 				lastVotedInstanceDistancesSTM = distancesSTM;
 				int nnIndicesSTM[] = nArgMin(Math.min(distancesSTM.length, this.kOption.getValue()), distancesSTM);
 				vSTM = getDistanceWeightedVotes(distancesSTM, nnIndicesSTM, this.stm);
                 predClassSTM = this.getClassFromVotes(vSTM);
-                distancesLTM = get1ToNDistanceMulti(inst, this.ltm, this.listAttributes);
+                distancesLTM = get1ToNDistances(inst, this.ltm, this.listAttributes);
                 vCM = getCMVotes(distancesSTM, this.stm, distancesLTM, this.ltm);
                 predClassCM = this.getClassFromVotes(vCM);
 				if (this.ltm.numInstances() >= 0) {
@@ -419,10 +416,10 @@ public class SAMkNNFS extends AbstractClassifier {
 	private void cleanSingle(Instances cleanAgainst, int cleanAgainstindex, Instances toClean){
 		Instances cleanAgainstTmp = new Instances(cleanAgainst);
 		cleanAgainstTmp.delete(cleanAgainstindex);
-		float distancesSTM[] = get1ToNDistanceMulti(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp, this.listAttributes);
+		float distancesSTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp, this.listAttributes);
 		int nnIndicesSTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesSTM.length), distancesSTM);
 
-		float distancesLTM[] = get1ToNDistanceMulti(cleanAgainst.get(cleanAgainstindex), toClean, this.listAttributes);
+		float distancesLTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), toClean, this.listAttributes);
 		int nnIndicesLTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesLTM.length), distancesLTM);
 		double distThreshold = 0;
 		for (int nnIdx: nnIndicesSTM){
