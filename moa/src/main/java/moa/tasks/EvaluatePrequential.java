@@ -185,7 +185,8 @@ public class EvaluatePrequential extends MainTask {
         }
         boolean firstDump = true;
         boolean preciseCPUTiming = TimingUtils.enablePreciseTiming();
-        long evaluateStartTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
+        //long evaluateStartTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
+        long evaluateStartTime = System.nanoTime();
         long lastEvaluateStartTime = evaluateStartTime;
         double RAMHours = 0.0;
         while (stream.hasMoreInstances()
@@ -210,7 +211,8 @@ public class EvaluatePrequential extends MainTask {
             instancesProcessed++;
             if (instancesProcessed % this.sampleFrequencyOption.getValue() == 0
                     || stream.hasMoreInstances() == false) {
-                long evaluateTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
+                //long evaluateTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
+                long evaluateTime = System.nanoTime();
                 double time = TimingUtils.nanoTimeToSeconds(evaluateTime - evaluateStartTime);
                 double timeIncrement = TimingUtils.nanoTimeToSeconds(evaluateTime - lastEvaluateStartTime);
                 double RAMHoursIncrement = learner.measureByteSize() / (1024.0 * 1024.0 * 1024.0); //GBs
@@ -260,8 +262,8 @@ public class EvaluatePrequential extends MainTask {
                 if (monitor.resultPreviewRequested()) {
                     monitor.setLatestResultPreview(learningCurve.copy());
                 }
-                secondsElapsed = (int) TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread()
-                        - evaluateStartTime);
+                //secondsElapsed = (int) TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - evaluateStartTime);
+                secondsElapsed = (int) TimingUtils.nanoTimeToSeconds(System.nanoTime() - evaluateStartTime);
             }
         }
         if (immediateResultStream != null) {

@@ -106,7 +106,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     protected ADWIN adwin;
 
     public IntOption eraseMembers = new IntOption("eraseMembers", 'y',
-            "eraseMembers", 0, 0, 2);
+            "eraseMembers", 0, 0, 3);
 
     public FlagOption disableWeightedVote = new FlagOption("disableWeightedVote", 'd',
             "Should use weighted voting?");
@@ -256,23 +256,30 @@ public class LeveragingBag2 extends AbstractClassifier {
         if (eraseMembers.getValue() == 2)
             ErrEstim = this.adwin.getEstimation();
 
-        if ((eraseMembers.getValue() == 1 && trainstepCount%2000 == 0) || (eraseMembers.getValue() == 2 && this.adwin.setInput(correct ? 0 : 1) && this.adwin.getEstimation() > ErrEstim)){
-            double max = 0.0;
-            int imax = -1;
-            for (int i = 0; i < this.ensemble.length; i++) {
-                double error = 1 - this.ensemble[i].accCurrentConcept;
-                if (max < error) {
-                    max = error;
-                    imax = i;
+        if ((eraseMembers.getValue() == 1 && trainstepCount % 2000 == 0) || (eraseMembers.getValue() >= 2 && this.adwin.setInput(correct ? 0 : 1) && this.adwin.getEstimation() > ErrEstim)){
+            int nRemovals = 1;
+            if (eraseMembers.getValue() == 3)
+                nRemovals = Math.max(ensemble.length / 10, 1);
+            if (eraseMembers.getValue() >= 2)
+                System.out.println(trainstepCount + " " + nRemovals + " removals, adwin width " + adwin.getWidth());
+            List<Integer> excludeIndices = new ArrayList<>();
+            for (int k = 0; k < nRemovals; k++) {
+                double max = 0.0;
+                int imax = -1;
+                for (int i = 0; i < this.ensemble.length; i++) {
+                    double error = 1 - this.ensemble[i].accCurrentConcept;
+                    if (max < error && excludeIndices.indexOf(i) == -1)  {
+                        max = error;
+                        imax = i;
+                    }
                 }
-            }
-            if (imax != -1) {
-                System.out.println(trainstepCount + " remove " + imax);
-                if (eraseMembers.getValue() == 2)
-                    System.out.println("adwin width " + adwin.getWidth());
-                this.ensemble[imax].resetLearning();
-                this.ensemble[imax].setModelContext(this.modelContext);
-                randomizeEnsembleMember(this.ensemble[imax], imax, inst.numAttributes());
+                if (imax != -1) {
+                    System.out.println("remove " + imax);
+                    excludeIndices.add(imax);
+                    this.ensemble[imax].resetLearning();
+                    this.ensemble[imax].setModelContext(this.modelContext);
+                    randomizeEnsembleMember(this.ensemble[imax], imax, inst.numAttributes());
+                }
             }
         }
     }
