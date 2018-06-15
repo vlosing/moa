@@ -156,6 +156,12 @@ public class AdaptiveRandomForest extends AbstractClassifier {
             this.executor = Executors.newFixedThreadPool(numberOfJobs);
 
     }
+    @Override
+    public void afterLearning(){
+        if (executor!=null){
+            executor.shutdown();
+        }
+    }
 
     @Override
     public void trainOnInstanceImpl(Instance instance) {
@@ -272,7 +278,6 @@ public class AdaptiveRandomForest extends AbstractClassifier {
         if(this.subspaceSize > n)
             this.subspaceSize = n;
 
-        System.out.println(this.subspaceSize);
         ARFHoeffdingTree treeLearner = (ARFHoeffdingTree) getPreparedClassOption(this.treeLearnerOption);
         treeLearner.resetLearning();
         

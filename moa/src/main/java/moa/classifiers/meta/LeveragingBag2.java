@@ -127,29 +127,28 @@ public class LeveragingBag2 extends AbstractClassifier {
 
     private ExecutorService executor;
 
-
-    public void randomizeEnsembleMember(SAMkNNFS member, int index, int numAttributes) {
+    public void randomizeEnsembleMember(SAMkNNFS member, int index, InstanceInformation info) {
         if (randomizeK.isSet()){
             member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
-            System.out.println(member.kOption.getValue());
+            //System.out.println(member.kOption.getValue());
         }
         if (randomizeFeatures.isSet()){
-            int n = numAttributes-1;
+            int n = info.numAttributes()-1;
             int nFeatures = Math.min((int) ((Math.round(n * 0.7) + 1)), n) ;
-            member.randomizeFeatures(nFeatures, n, this.classifierRandom);
+            member.randomizeFeatures(nFeatures, info, this.classifierRandom);
         }
         if (randomizeDistanceMetric.isSet()){
             member.distanceMetricOption.setChosenIndex(this.classifierRandom.nextInt(2));
-            System.out.println(member.distanceMetricOption.getChosenLabel());
+            //System.out.println(member.distanceMetricOption.getChosenLabel());
         }
         if (randomizWeighting.isSet()){
             if (this.classifierRandom.nextInt(2) == 1)
                 member.uniformWeightedOption.set();
-            System.out.println(member.uniformWeightedOption.isSet());
+            //System.out.println(member.uniformWeightedOption.isSet());
         }
         if (randomizeLamda.isSet()){
-            lamdas[index] = Math.max(this.classifierRandom.nextDouble()*6, + 0.2);
-            System.out.println(lamdas[index]);
+            lamdas[index] = Math.max(this.classifierRandom.nextDouble()*weightShrinkOption.getValue(), + 0.2);
+            //System.out.println(lamdas[index]);
         }
     }
     public int trainstepCount = 0;
@@ -160,8 +159,7 @@ public class LeveragingBag2 extends AbstractClassifier {
         super.setModelContext(context);
         for (int i = 0; i < this.ensemble.length; i++) {
             this.ensemble[i].setModelContext(context);
-            System.out.println(context.getInstanceInformation().numAttributes());
-            randomizeEnsembleMember(this.ensemble[i], i, context.getInstanceInformation().numAttributes());
+            randomizeEnsembleMember(this.ensemble[i], i, context.getInstanceInformation());
         }
     }
 
@@ -242,7 +240,6 @@ public class LeveragingBag2 extends AbstractClassifier {
                 }
             }else {
                 noCount++;
-                //System.out.println(noCount);
             }
         }
         if(this.executor != null) {
@@ -274,11 +271,11 @@ public class LeveragingBag2 extends AbstractClassifier {
                     }
                 }
                 if (imax != -1) {
-                    System.out.println("remove " + imax);
+                    //System.out.println("remove " + imax);
                     excludeIndices.add(imax);
                     this.ensemble[imax].resetLearning();
                     this.ensemble[imax].setModelContext(this.modelContext);
-                    randomizeEnsembleMember(this.ensemble[imax], imax, inst.numAttributes());
+                    randomizeEnsembleMember(this.ensemble[imax], imax, this.modelContext.getInstanceInformation());
                 }
             }
         }
