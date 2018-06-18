@@ -304,7 +304,6 @@ public class LeveragingBag2 extends AbstractClassifier {
                     }
                 }
             } else {
-                //finish training
                 Collection<VotingRunnable> tasks = new ArrayList<>();
                 for (int i = 0; i < this.ensemble.length; ++i) {
                     VotingRunnable task = new VotingRunnable(this.ensemble[i],

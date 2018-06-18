@@ -61,7 +61,7 @@ public abstract class NormalizableDistance
     /**
      * True if normalization is turned off (default false).
      */
-    protected boolean m_DontNormalize = true;
+    protected boolean m_DontNormalize = false;
 
     /**
      * The range of the attributes.
