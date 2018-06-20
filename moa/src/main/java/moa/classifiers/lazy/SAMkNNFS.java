@@ -309,7 +309,7 @@ public class SAMkNNFS extends AbstractClassifier {
 		int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
 
 		if (newWindowSize < oldWindowSize) {
-            System.out.println(trainStepCount + " shrinked from " + oldWindowSize + " to " + newWindowSize);
+            //System.out.println(trainStepCount + " shrinked from " + oldWindowSize + " to " + newWindowSize);
 			int diff = oldWindowSize - newWindowSize;
 			Instances discardedSTMInstances = new Instances(this.stm, 0);
 
@@ -395,7 +395,7 @@ public class SAMkNNFS extends AbstractClassifier {
         } catch (Exception e) {
             return new double[inst.numClasses()];
         }
-        System.out.println(trainStepCount + " " + Utils.arrayToString(v));
+        //System.out.println(trainStepCount + " " + Utils.arrayToString(v));
         return v;
     }
 
@@ -433,7 +433,7 @@ public class SAMkNNFS extends AbstractClassifier {
      * Performs classwise kMeans++ clustering for given samples with corresponding labels. The number of samples is halved per class.
      */
     private void clusterDown() {
-        System.out.println(trainStepCount + " cluster down");
+        //System.out.println(trainStepCount + " cluster down");
         int classIndex = this.ltm.classIndex();
         for (int c = 0; c <= this.maxClassValue; c++) {
             List<double[]> classSamples = new ArrayList<>();
@@ -557,8 +557,8 @@ public class SAMkNNFS extends AbstractClassifier {
             }
         } else {
             for (int nnIdx : nnIndices) {
-                if (this.trainStepCount == 5010)
-                    System.out.println(nnIdx);
+                //if (this.trainStepCount == 5010)
+                //    System.out.println(nnIdx);
                 v[(int) instances.instance(nnIdx).classValue()] += 1. / Math.max(distances[nnIdx], 0.000000001);
             }
         }
@@ -792,7 +792,7 @@ public class SAMkNNFS extends AbstractClassifier {
                 this.predictionHistories.put(idx, predHistory);
                 errorRates.add(this.getHistoryErrorRate(predHistory));
             }
-            System.out.println(Utils.arrayToString(errorRates.toArray()));
+            //System.out.println(Utils.arrayToString(errorRates.toArray()));
             int minErrorRateIdx = errorRates.indexOf(Collections.min(errorRates));
             int windowSize = numSamplesRange.get(minErrorRateIdx);
             if (windowSize < numSamples) {

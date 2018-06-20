@@ -280,18 +280,24 @@ public class SAMkNNFS2 extends AbstractClassifier {
 
     private void shiftDistMIdx(int numShifts){
         distMStartIdx += numShifts;
-        int limitOptionValue = this.limitOption.getValue();
-        if (distMStartIdx >= limitOptionValue) {
-            distMStartIdx = distMStartIdx - limitOptionValue;
-            System.out.println("shift " + distMStartIdx);
-        }
     }
-    private int getDistancesSTMIdx(int instanceIdx){
+
+    private void checkForRewriteDistIdx(){
         int limitOptionValue = this.limitOption.getValue();
-        if (distMStartIdx + instanceIdx >= limitOptionValue)
-            return distMStartIdx + instanceIdx - limitOptionValue;
-        else
-            return distMStartIdx + instanceIdx;
+        if (distMStartIdx + stm.size()-1 >= limitOptionValue){
+            System.out.println(trainStepCount + " rewrite");
+            for (int i = 0; i < this.stm.numInstances()-1; i++) {
+                for (int j = 0; j < this.stm.numInstances()-1; j++) {
+                    this.distMSTM[i][j] = this.distMSTM[distMStartIdx + i][distMStartIdx + j];
+                }
+            }
+            distMStartIdx = 0;
+        }
+
+    }
+
+    private int getDistancesSTMIdx(int instanceIdx){
+        return distMStartIdx + instanceIdx;
     }
     @Override
     public void trainOnInstanceImpl(Instance inst) {
@@ -307,17 +313,19 @@ public class SAMkNNFS2 extends AbstractClassifier {
         this.stm.add(inst);
         memorySizeCheck();
         clean(this.stm, this.ltm, true);
+
+        checkForRewriteDistIdx();
         float distancesSTM[];
+        int lastInstanceidx = getDistancesSTMIdx(this.stm.numInstances() - 1);
         if (inst == lastVotedInstance) {
             distancesSTM = lastVotedInstanceDistancesSTM;
-            int lastInstanceidx = getDistancesSTMIdx(this.stm.numInstances() - 1);
+
             for (int i = 0; i < this.stm.numInstances() - 1; i++) {
                 this.distMSTM[lastInstanceidx][getDistancesSTMIdx(i)] = distancesSTM[i];
             }
             this.distMSTM[lastInstanceidx][lastInstanceidx] = 0;
         } else {
             distancesSTM = this.get1ToNDistances(inst, this.stm);
-            int lastInstanceidx = getDistancesSTMIdx(this.stm.numInstances() - 1);
             for (int i = 0; i < this.stm.numInstances(); i++) {
                 this.distMSTM[lastInstanceidx][getDistancesSTMIdx(i)] = distancesSTM[i];
             }
@@ -326,7 +334,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
 		int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
 
 		if (newWindowSize < oldWindowSize) {
-            System.out.println(trainStepCount + " shrinked from " + oldWindowSize + " to " + newWindowSize);
+            //System.out.println(trainStepCount + " shrinked from " + oldWindowSize + " to " + newWindowSize);
 			int diff = oldWindowSize - newWindowSize;
 			Instances discardedSTMInstances = new Instances(this.stm, 0);
 
@@ -334,7 +342,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
 				discardedSTMInstances.add(this.stm.get(0).copy());
 				this.stm.delete(0);
 			}
-			shiftDistMIdx(diff);
+            distMStartIdx += diff;
 
 			for (int i = 0; i < diff; i++) {
 				this.stmHistory.remove(0);
@@ -349,73 +357,6 @@ public class SAMkNNFS2 extends AbstractClassifier {
 			memorySizeCheck();
 		}
     }
-/*
-    @Override
-    public double[] getVotesForInstance(Instance inst) {
-
-        double vSTM[];
-        double vLTM[];
-        double vCM[];
-        double v[];
-        float distMSTM[];
-        float distancesLTM[];
-        int predClassSTM = 0;
-        int predClassLTM = 0;
-        int predClassCM = 0;
-        try {
-            if (this.stm.numInstances() > 0) {
-                Collection<DistanceTask> tasks = new ArrayList<>();
-                tasks.add(new DistanceTask(this, inst, this.stm));
-                tasks.add(new DistanceTask(this, inst, this.ltm));
-                try {
-                    List<Future<float[]>> futures = this.executor.invokeAll(tasks);
-                    distMSTM = futures.get(0).get();
-                    distancesLTM = futures.get(1).get();
-                } catch (InterruptedException|ExecutionException ex) {
-                    throw new RuntimeException("Could not call invokeAll() on threads.");
-                }
-                lastVotedInstance = inst;
-                lastVotedInstanceDistancesSTM = distMSTM;
-
-                int nnIndicesSTM[] = nArgMin(Math.min(distMSTM.length, this.kOption.getValue()), distMSTM);
-                vSTM = getDistanceWeightedVotes(distMSTM, nnIndicesSTM, this.stm);
-                predClassSTM = this.getClassFromVotes(vSTM);
-                if (this.ltm.numInstances() >= 0) {
-                    int nnIndicesLTM[] = nArgMin(Math.min(distancesLTM.length, this.kOption.getValue()), distancesLTM);
-                    vLTM = getDistanceWeightedVotes(distancesLTM, nnIndicesLTM, this.ltm);
-                    predClassLTM = this.getClassFromVotes(vLTM);
-                } else {
-                    vLTM = new double[inst.numClasses()];
-                }
-                vCM = getCMVotes(distMSTM, this.stm, distancesLTM, this.ltm);
-                predClassCM = this.getClassFromVotes(vCM);
-
-                int correctSTM = historySum(this.stmHistory);
-                int correctLTM = historySum(this.ltmHistory);
-                int correctCM = historySum(this.cmHistory);
-                if (correctSTM >= correctLTM && correctSTM >= correctCM) {
-                    v = vSTM;
-                    this.accCurrentConcept = correctSTM / (float) this.stmHistory.size();
-                } else if (correctLTM > correctSTM && correctLTM >= correctCM) {
-                    v = vLTM;
-                    this.accCurrentConcept = correctLTM / (float) this.stmHistory.size();
-                } else {
-                    v = vCM;
-                    this.accCurrentConcept = correctCM / (float) this.stmHistory.size();
-                }
-            } else {
-                v = new double[inst.numClasses()];
-                this.accCurrentConcept = 1 / (float) inst.numClasses();
-            }
-            this.stmHistory.add((predClassSTM == inst.classValue()) ? 1 : 0);
-            this.ltmHistory.add((predClassLTM == inst.classValue()) ? 1 : 0);
-            this.cmHistory.add((predClassCM == inst.classValue()) ? 1 : 0);
-
-        } catch (Exception e) {
-            return new double[inst.numClasses()];
-        }
-        return v;
-    }*/
 
 
     /**
@@ -477,7 +418,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
         } catch (Exception e) {
             return new double[inst.numClasses()];
         }
-        System.out.println(trainStepCount + " " + Utils.arrayToString(v));
+        //System.out.println(trainStepCount + " " + Utils.arrayToString(v));
         return v;
     }
 
@@ -515,7 +456,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
      * Performs classwise kMeans++ clustering for given samples with corresponding labels. The number of samples is halved per class.
      */
     private void clusterDown() {
-        System.out.println(trainStepCount + " cluster down");
+        //System.out.println(trainStepCount + " cluster down");
         int classIndex = this.ltm.classIndex();
         for (int c = 0; c <= this.maxClassValue; c++) {
             List<double[]> classSamples = new ArrayList<>();
@@ -575,12 +516,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
                 }
                 this.clusterDown();
                 this.predictionHistories.clear();
-                shiftDistMIdx(numShifts);
-                /*for (int i = 0; i < this.stm.numInstances(); i++) {
-                    for (int j = 0; j < this.stm.numInstances(); j++) {
-                        this.distMSTM[i][j] = this.distMSTM[numShifts + i][numShifts + j];
-                    }
-                }*/
+                distMStartIdx += numShifts;
             }
         }
     }
@@ -641,16 +577,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
             }
         } else {
             for (int nnIdx : nnIndices) {
-                int idx = 0;
-
-                if (startIdx <= nnIdx){
-                    idx = nnIdx-startIdx;
-                } else{
-                    idx = limitOption.getValue() - startIdx + nnIdx;
-                }
-                if (this.trainStepCount == 5010)
-                    System.out.println(idx);
-                v[(int) instances.instance(idx).classValue()] += 1. / Math.max(distances[nnIdx], 0.000000001);
+                v[(int) instances.instance(nnIdx-startIdx).classValue()] += 1. / Math.max(distances[nnIdx], 0.000000001);
             }
         }
         return v;
@@ -794,52 +721,18 @@ public class SAMkNNFS2 extends AbstractClassifier {
         int indices[] = new int[n];
         for (int i = 0; i < n; i++) {
             float minValue = Float.MAX_VALUE;
-            if (startIdx <= endIdx) {
-                for (int j = startIdx; j < endIdx + 1; j++) {
-                    if (values[j] < minValue) {
-                        boolean alreadyUsed = false;
-                        for (int k = 0; k < i; k++) {
-                            if (indices[k] == j) {
-                                alreadyUsed = true;
-                                break;
-                            }
-                        }
-                        if (!alreadyUsed) {
-                            indices[i] = j;
-                            minValue = values[j];
+            for (int j = startIdx; j < endIdx + 1; j++) {
+                if (values[j] < minValue) {
+                    boolean alreadyUsed = false;
+                    for (int k = 0; k < i; k++) {
+                        if (indices[k] == j) {
+                            alreadyUsed = true;
+                            break;
                         }
                     }
-                }
-            }else{
-                //System.out.println("jo");
-                for (int j = startIdx; j < values.length; j++) {
-                    if (values[j] < minValue) {
-                        boolean alreadyUsed = false;
-                        for (int k = 0; k < i; k++) {
-                            if (indices[k] == j) {
-                                alreadyUsed = true;
-                                break;
-                            }
-                        }
-                        if (!alreadyUsed) {
-                            indices[i] = j;
-                            minValue = values[j];
-                        }
-                    }
-                }
-                for (int j = 0; j < endIdx + 1; j++) {
-                    if (values[j] < minValue) {
-                        boolean alreadyUsed = false;
-                        for (int k = 0; k < i; k++) {
-                            if (indices[k] == j) {
-                                alreadyUsed = true;
-                                break;
-                            }
-                        }
-                        if (!alreadyUsed) {
-                            indices[i] = j;
-                            minValue = values[j];
-                        }
+                    if (!alreadyUsed) {
+                        indices[i] = j;
+                        minValue = values[j];
                     }
                 }
             }
@@ -926,7 +819,7 @@ public class SAMkNNFS2 extends AbstractClassifier {
                 this.predictionHistories.put(idx, predHistory);
                 errorRates.add(this.getHistoryErrorRate(predHistory));
             }
-            System.out.println(Utils.arrayToString(errorRates.toArray()));
+            //System.out.println(Utils.arrayToString(errorRates.toArray()));
             int minErrorRateIdx = errorRates.indexOf(Collections.min(errorRates));
             int windowSize = numSamplesRange.get(minErrorRateIdx);
             if (windowSize < numSamples) {
