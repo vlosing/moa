@@ -122,6 +122,7 @@ public class SAMkNNFS extends AbstractClassifier {
     private long runTimeMeasurement;
     private long runTimeMeasurementTrain;
     private long runTimeMeasurementVotes;
+    private long runTimeCMVotes;
 
 
     /**
@@ -178,7 +179,8 @@ public class SAMkNNFS extends AbstractClassifier {
         }
         System.out.println("train " + runTimeMeasurementTrain/1000000000.);
         System.out.println("votes " + runTimeMeasurementVotes/1000000000.);
-        System.out.println(runTimeMeasurement/1000000000.);
+        System.out.println("distances" + runTimeMeasurement/1000000000.);
+        System.out.println("cmVotes" + runTimeCMVotes/1000000000.);
 
     }
 
@@ -328,6 +330,7 @@ public class SAMkNNFS extends AbstractClassifier {
             System.arraycopy(distancesSTM, 0, this.distMSTM[lastInstanceidx], getDistancesSTMIdx(0), this.stm.numInstances() - 1);
             this.distMSTM[lastInstanceidx][lastInstanceidx] = 0;
         } else {
+
             distancesSTM = this.get1ToNDistances(inst, this.stm);
             System.arraycopy(distancesSTM, 0, this.distMSTM[lastInstanceidx], getDistancesSTMIdx(0), this.stm.numInstances());
         }
@@ -336,6 +339,7 @@ public class SAMkNNFS extends AbstractClassifier {
         int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
 
         if (newWindowSize < oldWindowSize) {
+            //System.out.println(trainStepCount + " shrinked");
             int diff = oldWindowSize - newWindowSize;
             Instances discardedSTMInstances = new Instances(this.stm, 0);
 
@@ -345,7 +349,8 @@ public class SAMkNNFS extends AbstractClassifier {
             }
             shiftDistMIdx(diff);
 
-            for (int i = 0; i < diff; i++) {
+            int histDiff = this.stmHistory.size() - newWindowSize;
+            for (int i = 0; i < histDiff; i++) {
                 this.stmHistory.remove(0);
                 this.ltmHistory.remove(0);
                 this.cmHistory.remove(0);
@@ -395,9 +400,9 @@ public class SAMkNNFS extends AbstractClassifier {
                 } else {
                     vLTM = new double[inst.numClasses()];
                 }
+
                 vCM = getCMVotes(distancesSTM, this.stm, distancesLTM, this.ltm);
                 predClassCM = this.getClassFromVotes(vCM);
-
                 int correctSTM = historySum(this.stmHistory);
                 int correctLTM = historySum(this.ltmHistory);
                 int correctCM = historySum(this.cmHistory);
@@ -634,13 +639,13 @@ public class SAMkNNFS extends AbstractClassifier {
      * Returns the distance weighted votes for the combined memory (CM).
      */
     private double[] getCMVotes(float distancesSTM[], Instances stm, float distancesLTM[], Instances ltm) {
-        //long start = System.nanoTime();
+        long start = System.nanoTime();
         float[] distancesCM = new float[distancesSTM.length + distancesLTM.length];
         System.arraycopy(distancesSTM, 0, distancesCM, 0, distancesSTM.length);
         System.arraycopy(distancesLTM, 0, distancesCM, distancesSTM.length, distancesLTM.length);
         int nnIndicesCM[] = nArgMin(Math.min(distancesCM.length, this.kOption.getValue()), distancesCM);
         double[] votes = getDistanceWeightedVotesCM(distancesCM, nnIndicesCM, stm, ltm);
-        //runTimeMeasurement += System.nanoTime() - start;
+        runTimeCMVotes += System.nanoTime() - start;
         return votes;
 
     }

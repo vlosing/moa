@@ -103,6 +103,7 @@ public class LeveragingBag2 extends AbstractClassifier {
 
     protected boolean initMatrixCodes = false;
     int noCount = 0;
+    private long poissonTime;
 
     protected ADWIN adwin;
 
@@ -148,7 +149,7 @@ public class LeveragingBag2 extends AbstractClassifier {
             //System.out.println(member.uniformWeightedOption.isSet());
         }
         if (randomizeLamda.isSet()){
-            lamdas[index] = Math.max(this.classifierRandom.nextDouble()*weightShrinkOption.getValue(), + 0.2);
+            lamdas[index] = Math.max(this.classifierRandom.nextDouble() * 6, + 0.2);
             //System.out.println(lamdas[index]);
         }
     }
@@ -203,6 +204,7 @@ public class LeveragingBag2 extends AbstractClassifier {
         if (executor!=null){
             executor.shutdown();
         }
+        System.out.println("poissontime " + poissonTime/1000000000);
     }
 
     @Override
@@ -217,10 +219,14 @@ public class LeveragingBag2 extends AbstractClassifier {
         //Train ensemble of classifiers
         for (int i = 0; i < this.ensemble.length; i++) {
             double w = lamdas[i];
+;
             double k = 0.0;
             switch (this.leveraginBagAlgorithmOption.getChosenIndex()) {
                 case 0: //LeveragingBag
+                    long start = System.nanoTime();
                     k = MiscUtils.poisson(w, this.classifierRandom);
+                    poissonTime += System.nanoTime() - start;
+                    //System.out.println(k);
                     break;
                 case 2: //LeveragingBagHalf
                     w = 1.0;
@@ -236,7 +242,8 @@ public class LeveragingBag2 extends AbstractClassifier {
                     k = (k > 0) ? w : 0;
                     break;
             }
-            if (k > 0) {
+            if (k > 0)
+            {
                 if(this.executor != null) {
                     if (asynchronousMode.isSet())
                         this.executor.submit(new TrainingRunnable(this.ensemble[i], inst));
@@ -246,9 +253,9 @@ public class LeveragingBag2 extends AbstractClassifier {
                 else { // SINGLE_THREAD is in-place...
                     this.ensemble[i].trainOnInstance(inst);
                 }
-            }else {
+            }/*else {
                 noCount++;
-            }
+            }*/
         }
         if(this.executor != null) {
             try {
