@@ -27,7 +27,7 @@ import com.yahoo.labs.samoa.instances.InstancesHeader;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import moa.classifiers.core.driftdetection.ADWIN;
-import moa.classifiers.lazy.SAMkNNFS;
+import moa.classifiers.lazy.SAMkNNFS2;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
@@ -39,8 +39,8 @@ import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -54,7 +54,7 @@ import java.util.concurrent.*;
  * @author Albert Bifet (abifet at cs dot waikato dot ac dot nz)
  * @version $Revision: 7 $
  */
-public class LeveragingBag2 extends AbstractClassifier {
+public class LeveragingBag3 extends AbstractClassifier implements SAMkNNFS2.STMDistanceMatrix {
 
     private static final long serialVersionUID = 1L;
 
@@ -64,7 +64,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     }
 
     public ClassOption baseLearnerOption = new ClassOption("baseLearner", 'l',
-            "Classifier to train.", Classifier.class, "lazy.SAMkNNFS");
+            "Classifier to train.", Classifier.class, "lazy.SAMkNNFS2");
 
     public IntOption ensembleSizeOption = new IntOption("ensembleSize", 's',
             "The number of models in the bag.", 10, 1, Integer.MAX_VALUE);
@@ -93,7 +93,7 @@ public class LeveragingBag2 extends AbstractClassifier {
 
     public StringOption uuidOption = new StringOption("uuidPrefix", 'o',
             "uuidPrefix.", "");
-    protected SAMkNNFS[] ensemble;
+    protected SAMkNNFS2[] ensemble;
     private ArrayList<Integer>[] ensembleLabels;
     private double lamdas[];
 
@@ -128,7 +128,7 @@ public class LeveragingBag2 extends AbstractClassifier {
 
     private ExecutorService executor;
 
-    public void randomizeEnsembleMember(SAMkNNFS member, int index, InstanceInformation info) {
+    public void randomizeEnsembleMember(SAMkNNFS2 member, int index, InstanceInformation info) {
         if (randomizeK.isSet()){
             member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
             //System.out.println(member.kOption.getValue());
@@ -154,6 +154,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     }
     public int trainstepCount = 0;
     private Instances lastInstances;
+    private float[] lastDistances;
     private Instance lastVotedInstance;
     private double[] lastVotes;
 
@@ -164,22 +165,23 @@ public class LeveragingBag2 extends AbstractClassifier {
         for (int i = 0; i < this.ensemble.length; i++) {
             this.ensemble[i].setModelContext(context);
             randomizeEnsembleMember(this.ensemble[i], i, context.getInstanceInformation());
+            this.ensemble[i].setMasterDistMSTM(this);
         }
     }
 
     @Override
     public void resetLearningImpl() {
-        this.ensemble = new SAMkNNFS[this.ensembleSizeOption.getValue()];
+        this.ensemble = new SAMkNNFS2[this.ensembleSizeOption.getValue()];
         ensembleLabels = new ArrayList[this.ensembleSizeOption.getValue()];
         lamdas = new double[this.ensembleSizeOption.getValue()];
-        SAMkNNFS baseLearner = (SAMkNNFS) getPreparedClassOption(this.baseLearnerOption);
+        SAMkNNFS2 baseLearner = (SAMkNNFS2) getPreparedClassOption(this.baseLearnerOption);
 
         this.adwin = new ADWIN(this.deltaAdwinOption.getValue());
 
         for (int i = 0; i < this.ensemble.length; i++) {
             lamdas[i] = weightShrinkOption.getValue();
             ensembleLabels[i] = new ArrayList();
-            this.ensemble[i] = (SAMkNNFS) baseLearner.copy();
+            this.ensemble[i] = (SAMkNNFS2) baseLearner.copy();
             //this.ensemble[i].setRandomSeed(i*100);
             this.ensemble[i].resetLearning();
             //System.out.println(((SAMkNN2)this.ensemble[i]).limitOption.getValue() + " " + ((SAMkNN2)this.ensemble[i]).minSTMSizeOption.getValue() + " " +                    ((SAMkNN2)this.ensemble[i]).randomSeed);
@@ -208,7 +210,7 @@ public class LeveragingBag2 extends AbstractClassifier {
     @Override
     public void trainOnInstanceImpl(Instance inst) {
         trainstepCount ++;
-        if (lastInstances.size() > 1000)
+        if (lastInstances.size() >= 1000)
             lastInstances.delete(0);
         lastInstances.addAsReference(inst);
 
@@ -237,6 +239,7 @@ public class LeveragingBag2 extends AbstractClassifier {
                     break;
             }
             if (k > 0) {
+                this.ensemble[i].addSTMMasterIdx(this.trainstepCount-1);
                 if(this.executor != null) {
                     if (asynchronousMode.isSet())
                         this.executor.submit(new TrainingRunnable(this.ensemble[i], inst));
@@ -247,6 +250,7 @@ public class LeveragingBag2 extends AbstractClassifier {
                     this.ensemble[i].trainOnInstance(inst);
                 }
             }else {
+                //System.out.println("didnt add " + (this.trainstepCount-1));
                 noCount++;
             }
         }
@@ -283,6 +287,7 @@ public class LeveragingBag2 extends AbstractClassifier {
                     excludeIndices.add(imax);
                     this.ensemble[imax].resetLearning();
                     this.ensemble[imax].setModelContext(this.modelContext);
+                    this.ensemble[imax].setMasterDistMSTM(this);
                     randomizeEnsembleMember(this.ensemble[imax], imax, this.modelContext.getInstanceInformation());
                 }
             }
@@ -296,7 +301,8 @@ public class LeveragingBag2 extends AbstractClassifier {
         }
         else{
             lastVotedInstance = inst;
-
+            lastDistances = this.ensemble[0].get1ToNDistances(inst, lastInstances);
+            
             DoubleVector combinedVote = new DoubleVector();
             if (executor == null) {
                 for (int i = 0; i < this.ensemble.length; ++i) {
@@ -392,10 +398,10 @@ public class LeveragingBag2 extends AbstractClassifier {
      * Inner class to assist with the multi-thread execution.
      */
     protected class TrainingRunnable implements Callable<Integer> {
-        final private SAMkNNFS learner;
+        final private SAMkNNFS2 learner;
         final private Instance instance;
 
-        public TrainingRunnable(SAMkNNFS learner, Instance instance) {
+        public TrainingRunnable(SAMkNNFS2 learner, Instance instance) {
             this.learner = learner;
             this.instance = instance;
         }
@@ -408,10 +414,10 @@ public class LeveragingBag2 extends AbstractClassifier {
     }
 
     protected class VotingRunnable implements Callable<double[]> {
-        final private SAMkNNFS learner;
+        final private SAMkNNFS2 learner;
         final private Instance instance;
         double[] votes;
-        public VotingRunnable(SAMkNNFS learner, Instance instance) {
+        public VotingRunnable(SAMkNNFS2 learner, Instance instance) {
             this.learner = learner;
             this.instance = instance;
         }
@@ -422,5 +428,25 @@ public class LeveragingBag2 extends AbstractClassifier {
             return votes;
         }
     }
+
+    public float[] getSTMDistancesToIndices(Instance sample, List<Integer> indices){
+        if (sample == lastVotedInstance){
+            //System.out.println("found " + indices.size()+ " " + lastDistances.length);
+            float [] distances = new float[indices.size()];
+            for (int i = 0; i < indices.size(); i++){
+                //System.out.println(i + " " + indices.get(i) + " " + (indices.get(i) - trainstepCount + Math.min(trainstepCount, 1000)));
+                distances[i] = lastDistances[indices.get(i) - trainstepCount + Math.min(trainstepCount, 1000)];
+            }
+            //System.out.println("distances " + Utils.arrayToString(distances));
+            return distances;
+        }
+        else{
+            //System.out.println("null");
+            return null;
+        }
+
+
+    }
+
 }
 

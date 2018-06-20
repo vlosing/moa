@@ -279,6 +279,10 @@ public class Instances implements Serializable {
         return this.instances.size();
     }
 
+    public void addAsReference(Instance inst) {
+        this.instances.add(inst);
+    }
+
     /**
      * Adds the.
      *
