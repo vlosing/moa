@@ -28,8 +28,8 @@ import moa.core.Measurement;
 import moa.core.Utils;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.*;
 
 /**
  * Self Adjusting Memory (SAM) coupled with the k Nearest Neighbor classifier (kNN) .<p>
@@ -56,7 +56,7 @@ import java.util.concurrent.*;
  *         month={Dec}
  *         }"
  */
-public class SAMkNNFS extends AbstractClassifier {
+public class SAMkNNFS2 extends AbstractClassifier {
     private static final long serialVersionUID = 1L;
     private static final String rEuclidean = "Euclidean";
     private static final String rManhatten = "Manhatten";
@@ -106,6 +106,7 @@ public class SAMkNNFS extends AbstractClassifier {
     private List<Integer> ltmHistory;
     private List<Integer> cmHistory;
     private float[][] distMSTM;
+    private int distMStartIdx;
     private float[] lastVotedInstanceDistancesSTM;
     private Instance lastVotedInstance;
 
@@ -149,6 +150,7 @@ public class SAMkNNFS extends AbstractClassifier {
         this.cmHistory = new ArrayList<>();
         //store calculated STM distances in a matrix to avoid recalculation, are reused in the STM adaption phase
         this.distMSTM = new float[limitOption.getValue() + 1][limitOption.getValue() + 1];
+        this.distMStartIdx = 0;
         this.predictionHistories = new HashMap<>();
         this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
@@ -276,6 +278,21 @@ public class SAMkNNFS extends AbstractClassifier {
         this.listAttributes = null;
     }
 
+    private void shiftDistMIdx(int numShifts){
+        distMStartIdx += numShifts;
+        int limitOptionValue = this.limitOption.getValue();
+        if (distMStartIdx >= limitOptionValue) {
+            distMStartIdx = distMStartIdx - limitOptionValue;
+            System.out.println("shift " + distMStartIdx);
+        }
+    }
+    private int getDistancesSTMIdx(int instanceIdx){
+        int limitOptionValue = this.limitOption.getValue();
+        if (distMStartIdx + instanceIdx >= limitOptionValue)
+            return distMStartIdx + instanceIdx - limitOptionValue;
+        else
+            return distMStartIdx + instanceIdx;
+    }
     @Override
     public void trainOnInstanceImpl(Instance inst) {
         if (normalizeDistancesOption.isSet()) {
@@ -293,17 +310,17 @@ public class SAMkNNFS extends AbstractClassifier {
         float distancesSTM[];
         if (inst == lastVotedInstance) {
             distancesSTM = lastVotedInstanceDistancesSTM;
+            int lastInstanceidx = getDistancesSTMIdx(this.stm.numInstances() - 1);
             for (int i = 0; i < this.stm.numInstances() - 1; i++) {
-                this.distMSTM[this.stm.numInstances() - 1][i] = distancesSTM[i];
-
+                this.distMSTM[lastInstanceidx][getDistancesSTMIdx(i)] = distancesSTM[i];
             }
-            this.distMSTM[this.stm.numInstances() - 1][this.stm.numInstances() - 1] = 0;
+            this.distMSTM[lastInstanceidx][lastInstanceidx] = 0;
         } else {
             distancesSTM = this.get1ToNDistances(inst, this.stm);
+            int lastInstanceidx = getDistancesSTMIdx(this.stm.numInstances() - 1);
             for (int i = 0; i < this.stm.numInstances(); i++) {
-                this.distMSTM[this.stm.numInstances() - 1][i] = distancesSTM[i];
+                this.distMSTM[lastInstanceidx][getDistancesSTMIdx(i)] = distancesSTM[i];
             }
-
         }
         int oldWindowSize = this.stm.numInstances();
 		int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
@@ -317,11 +334,8 @@ public class SAMkNNFS extends AbstractClassifier {
 				discardedSTMInstances.add(this.stm.get(0).copy());
 				this.stm.delete(0);
 			}
-			for (int i = 0; i < this.stm.numInstances(); i++){
-				for (int j = 0; j < this.stm.numInstances(); j++){
-					this.distMSTM[i][j] = this.distMSTM[diff+i][diff+j];
-				}
-			}
+			shiftDistMIdx(diff);
+
 			for (int i = 0; i < diff; i++) {
 				this.stmHistory.remove(0);
 				this.ltmHistory.remove(0);
@@ -335,6 +349,74 @@ public class SAMkNNFS extends AbstractClassifier {
 			memorySizeCheck();
 		}
     }
+/*
+    @Override
+    public double[] getVotesForInstance(Instance inst) {
+
+        double vSTM[];
+        double vLTM[];
+        double vCM[];
+        double v[];
+        float distMSTM[];
+        float distancesLTM[];
+        int predClassSTM = 0;
+        int predClassLTM = 0;
+        int predClassCM = 0;
+        try {
+            if (this.stm.numInstances() > 0) {
+                Collection<DistanceTask> tasks = new ArrayList<>();
+                tasks.add(new DistanceTask(this, inst, this.stm));
+                tasks.add(new DistanceTask(this, inst, this.ltm));
+                try {
+                    List<Future<float[]>> futures = this.executor.invokeAll(tasks);
+                    distMSTM = futures.get(0).get();
+                    distancesLTM = futures.get(1).get();
+                } catch (InterruptedException|ExecutionException ex) {
+                    throw new RuntimeException("Could not call invokeAll() on threads.");
+                }
+                lastVotedInstance = inst;
+                lastVotedInstanceDistancesSTM = distMSTM;
+
+                int nnIndicesSTM[] = nArgMin(Math.min(distMSTM.length, this.kOption.getValue()), distMSTM);
+                vSTM = getDistanceWeightedVotes(distMSTM, nnIndicesSTM, this.stm);
+                predClassSTM = this.getClassFromVotes(vSTM);
+                if (this.ltm.numInstances() >= 0) {
+                    int nnIndicesLTM[] = nArgMin(Math.min(distancesLTM.length, this.kOption.getValue()), distancesLTM);
+                    vLTM = getDistanceWeightedVotes(distancesLTM, nnIndicesLTM, this.ltm);
+                    predClassLTM = this.getClassFromVotes(vLTM);
+                } else {
+                    vLTM = new double[inst.numClasses()];
+                }
+                vCM = getCMVotes(distMSTM, this.stm, distancesLTM, this.ltm);
+                predClassCM = this.getClassFromVotes(vCM);
+
+                int correctSTM = historySum(this.stmHistory);
+                int correctLTM = historySum(this.ltmHistory);
+                int correctCM = historySum(this.cmHistory);
+                if (correctSTM >= correctLTM && correctSTM >= correctCM) {
+                    v = vSTM;
+                    this.accCurrentConcept = correctSTM / (float) this.stmHistory.size();
+                } else if (correctLTM > correctSTM && correctLTM >= correctCM) {
+                    v = vLTM;
+                    this.accCurrentConcept = correctLTM / (float) this.stmHistory.size();
+                } else {
+                    v = vCM;
+                    this.accCurrentConcept = correctCM / (float) this.stmHistory.size();
+                }
+            } else {
+                v = new double[inst.numClasses()];
+                this.accCurrentConcept = 1 / (float) inst.numClasses();
+            }
+            this.stmHistory.add((predClassSTM == inst.classValue()) ? 1 : 0);
+            this.ltmHistory.add((predClassLTM == inst.classValue()) ? 1 : 0);
+            this.cmHistory.add((predClassCM == inst.classValue()) ? 1 : 0);
+
+        } catch (Exception e) {
+            return new double[inst.numClasses()];
+        }
+        return v;
+    }*/
+
 
     /**
      * Predicts the label of a given sample by using the STM, LTM and the CM.
@@ -357,13 +439,13 @@ public class SAMkNNFS extends AbstractClassifier {
                 lastVotedInstance = inst;
                 lastVotedInstanceDistancesSTM = distancesSTM;
                 int nnIndicesSTM[] = nArgMin(Math.min(distancesSTM.length, this.kOption.getValue()), distancesSTM);
-                vSTM = getDistanceWeightedVotes(distancesSTM, nnIndicesSTM, this.stm);
+                vSTM = getDistanceWeightedVotes(distancesSTM, nnIndicesSTM, this.stm, 0);
                 predClassSTM = this.getClassFromVotes(vSTM);
                 distancesLTM = get1ToNDistances(inst, this.ltm);
 
                 if (this.ltm.numInstances() >= 0) {
                     int nnIndicesLTM[] = nArgMin(Math.min(distancesLTM.length, this.kOption.getValue()), distancesLTM);
-                    vLTM = getDistanceWeightedVotes(distancesLTM, nnIndicesLTM, this.ltm);
+                    vLTM = getDistanceWeightedVotes(distancesLTM, nnIndicesLTM, this.ltm, 0);
                     predClassLTM = this.getClassFromVotes(vLTM);
                 } else {
                     vLTM = new double[inst.numClasses()];
@@ -477,6 +559,7 @@ public class SAMkNNFS extends AbstractClassifier {
     /**
      * Makes sure that the STM and LTM combined doe not surpass the maximum size.
      */
+
     private void memorySizeCheck() {
         if (this.stm.numInstances() + this.ltm.numInstances() > this.maxSTMSize + this.maxLTMSize) {
             if (this.ltm.numInstances() > this.maxLTMSize) {
@@ -492,11 +575,12 @@ public class SAMkNNFS extends AbstractClassifier {
                 }
                 this.clusterDown();
                 this.predictionHistories.clear();
-                for (int i = 0; i < this.stm.numInstances(); i++) {
+                shiftDistMIdx(numShifts);
+                /*for (int i = 0; i < this.stm.numInstances(); i++) {
                     for (int j = 0; j < this.stm.numInstances(); j++) {
                         this.distMSTM[i][j] = this.distMSTM[numShifts + i][numShifts + j];
                     }
-                }
+                }*/
             }
         }
     }
@@ -548,7 +632,7 @@ public class SAMkNNFS extends AbstractClassifier {
     /**
      * Returns the distance weighted votes.
      */
-    private double[] getDistanceWeightedVotes(float distances[], int[] nnIndices, Instances instances) {
+    private double[] getDistanceWeightedVotes(float distances[], int[] nnIndices, Instances instances, int startIdx) {
 
         double v[] = new double[this.maxClassValue + 1];
         if (this.uniformWeightedOption.isSet()) {
@@ -557,13 +641,21 @@ public class SAMkNNFS extends AbstractClassifier {
             }
         } else {
             for (int nnIdx : nnIndices) {
+                int idx = 0;
+
+                if (startIdx <= nnIdx){
+                    idx = nnIdx-startIdx;
+                } else{
+                    idx = limitOption.getValue() - startIdx + nnIdx;
+                }
                 if (this.trainStepCount == 5010)
-                    System.out.println(nnIdx);
-                v[(int) instances.instance(nnIdx).classValue()] += 1. / Math.max(distances[nnIdx], 0.000000001);
+                    System.out.println(idx);
+                v[(int) instances.instance(idx).classValue()] += 1. / Math.max(distances[nnIdx], 0.000000001);
             }
         }
         return v;
     }
+
 
     private double[] getDistanceWeightedVotesCM(float distances[], int[] nnIndices, Instances stm, Instances ltm) {
         double v[] = new double[this.maxClassValue + 1];
@@ -614,8 +706,8 @@ public class SAMkNNFS extends AbstractClassifier {
     }
 
     private int getLabelFct(float distances[], Instances instances, int startIdx, int endIdx) {
-        int nnIndices[] = nArgMin(Math.min(this.kOption.getValue(), distances.length), distances, startIdx, endIdx);
-        double votes[] = getDistanceWeightedVotes(distances, nnIndices, instances);
+        int nnIndices[] = nArgMin(Math.min(this.kOption.getValue(), instances.size()), distances, startIdx, endIdx);
+        double votes[] = getDistanceWeightedVotes(distances, nnIndices, instances, this.distMStartIdx);
         return this.getClassFromVotes(votes);
     }
 
@@ -702,17 +794,52 @@ public class SAMkNNFS extends AbstractClassifier {
         int indices[] = new int[n];
         for (int i = 0; i < n; i++) {
             float minValue = Float.MAX_VALUE;
-            for (int j = startIdx; j < endIdx + 1; j++) {
-                if (values[j] < minValue) {
-                    boolean alreadyUsed = false;
-                    for (int k = 0; k < i; k++) {
-                        if (indices[k] == j) {
-                            alreadyUsed = true;
+            if (startIdx <= endIdx) {
+                for (int j = startIdx; j < endIdx + 1; j++) {
+                    if (values[j] < minValue) {
+                        boolean alreadyUsed = false;
+                        for (int k = 0; k < i; k++) {
+                            if (indices[k] == j) {
+                                alreadyUsed = true;
+                                break;
+                            }
+                        }
+                        if (!alreadyUsed) {
+                            indices[i] = j;
+                            minValue = values[j];
                         }
                     }
-                    if (!alreadyUsed) {
-                        indices[i] = j;
-                        minValue = values[j];
+                }
+            }else{
+                //System.out.println("jo");
+                for (int j = startIdx; j < values.length; j++) {
+                    if (values[j] < minValue) {
+                        boolean alreadyUsed = false;
+                        for (int k = 0; k < i; k++) {
+                            if (indices[k] == j) {
+                                alreadyUsed = true;
+                                break;
+                            }
+                        }
+                        if (!alreadyUsed) {
+                            indices[i] = j;
+                            minValue = values[j];
+                        }
+                    }
+                }
+                for (int j = 0; j < endIdx + 1; j++) {
+                    if (values[j] < minValue) {
+                        boolean alreadyUsed = false;
+                        for (int k = 0; k < i; k++) {
+                            if (indices[k] == j) {
+                                alreadyUsed = true;
+                                break;
+                            }
+                        }
+                        if (!alreadyUsed) {
+                            indices[i] = j;
+                            minValue = values[j];
+                        }
                     }
                 }
             }
@@ -744,7 +871,13 @@ public class SAMkNNFS extends AbstractClassifier {
      */
     private List<Integer> getIncrementalTestTrainPredHistory(Instances instances, int startIdx, List<Integer> predictionHistory) {
         for (int i = startIdx + this.kOption.getValue() + predictionHistory.size(); i < instances.numInstances(); i++) {
-            predictionHistory.add((this.getLabelFct(distMSTM[i], instances, startIdx, i - 1) == instances.get(i).classValue()) ? 1 : 0);
+            //System.out.println(this.distMStartIdx + " " + instances.size() + " " + startIdx + " " + getDistancesSTMIdx(startIdx) + " " + (i - 1) + " " + getDistancesSTMIdx(i - 1));
+            int tmpStartIdx = getDistancesSTMIdx(startIdx);
+            int tmpEndIdx = getDistancesSTMIdx(i - 1);
+            //if (tmpEndIdx < tmpStartIdx){
+            //    System.out.println(this.distMStartIdx + " " + instances.size() + " " + startIdx + " " + getDistancesSTMIdx(startIdx) + " " + (i - 1) + " " + getDistancesSTMIdx(i - 1) + " " + i + " " + getDistancesSTMIdx(i));
+            //}
+            predictionHistory.add((this.getLabelFct(distMSTM[getDistancesSTMIdx(i)], instances, getDistancesSTMIdx(startIdx), getDistancesSTMIdx(i - 1)) == instances.get(i).classValue()) ? 1 : 0);
         }
         return predictionHistory;
     }
@@ -755,7 +888,7 @@ public class SAMkNNFS extends AbstractClassifier {
     private List<Integer> getTestTrainPredHistory(Instances instances, int startIdx) {
         List<Integer> predictionHistory = new ArrayList<>();
         for (int i = startIdx + this.kOption.getValue(); i < instances.numInstances(); i++) {
-            predictionHistory.add((this.getLabelFct(distMSTM[i], instances, startIdx, i - 1) == instances.get(i).classValue()) ? 1 : 0);
+            predictionHistory.add((this.getLabelFct(distMSTM[getDistancesSTMIdx(i)], instances, getDistancesSTMIdx(startIdx), getDistancesSTMIdx(i - 1)) == instances.get(i).classValue()) ? 1 : 0);
         }
         return predictionHistory;
     }
@@ -764,6 +897,7 @@ public class SAMkNNFS extends AbstractClassifier {
      * Returns the window size with the minimum Interleaved test-train error, using bisection (with recalculation of the STM error).
      */
     private int getMinErrorRateWindowSize() {
+
         int numSamples = this.stm.numInstances();
         if (numSamples < 2 * this.minSTMSizeOption.getValue()) {
             return numSamples;
