@@ -1220,9 +1220,11 @@ public final class Utils {
     double max = a[maxIndex(a)];
     double sum = 0.0;
 
+    //System.out.println("MAX " + max);
     double[] result = new double[a.length];
     for(int i = 0; i < a.length; i++) {
       result[i] = Math.exp(a[i] - max);
+      //System.out.println("i " + a[i]);
       sum += result[i];
     }
 

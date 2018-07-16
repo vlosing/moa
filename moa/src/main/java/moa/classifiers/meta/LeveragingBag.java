@@ -19,11 +19,9 @@
  */
 package moa.classifiers.meta;
 
-import com.github.javacliparser.IntOption;
-import com.github.javacliparser.FloatOption;
-import com.github.javacliparser.FlagOption;
+import com.github.javacliparser.*;
+import moa.core.Utils;
 import moa.options.ClassOption;
-import com.github.javacliparser.MultiChoiceOption;
 import moa.classifiers.core.driftdetection.ADWIN;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
@@ -34,6 +32,13 @@ import moa.core.Measurement;
 import moa.core.MiscUtils;
 import moa.options.*;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
+
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Map;
+
 /**
  * Leveraging Bagging for evolving data streams using ADWIN. Leveraging Bagging
  * and Leveraging Bagging MC using Random Output Codes ( -o option).
@@ -70,6 +75,7 @@ public class LeveragingBag extends AbstractClassifier {
     public FlagOption outputCodesOption = new FlagOption("outputCodes", 'o',
             "Use Output Codes to use binary classifiers.");
 
+
     public MultiChoiceOption leveraginBagAlgorithmOption = new MultiChoiceOption(
             "leveraginBagAlgorithm", 'm', "Leveraging Bagging to use.", new String[]{
                 "LeveragingBag", "LeveragingBagME", "LeveragingBagHalf", "LeveragingBagWT", "LeveragingSubag"},
@@ -84,11 +90,16 @@ public class LeveragingBag extends AbstractClassifier {
 
     protected ADWIN[] ADError;
 
+    private ArrayList<Integer>[] ensembleLabels;
+
     protected int numberOfChangesDetected;
 
     protected int[][] matrixCodes;
 
     protected boolean initMatrixCodes = false;
+
+    public StringOption uuidOption = new StringOption("uuidPrefix", 'u',
+            "uuidPrefix.", "");
 
     @Override
     public void setModelContext(InstancesHeader context) {
@@ -100,12 +111,13 @@ public class LeveragingBag extends AbstractClassifier {
 
     @Override
     public void resetLearningImpl() {
-        System.out.println("resetLearningImpl");
         this.ensemble = new Classifier[this.ensembleSizeOption.getValue()];
+        ensembleLabels = new ArrayList[this.ensembleSizeOption.getValue()];
         Classifier baseLearner = (Classifier) getPreparedClassOption(this.baseLearnerOption);
         baseLearner.resetLearning();
         for (int i = 0; i < this.ensemble.length; i++) {
             this.ensemble[i] = baseLearner.copy();
+            ensembleLabels[i] = new ArrayList();
         }
         this.ADError = new ADWIN[this.ensemble.length];
         for (int i = 0; i < this.ensemble.length; i++) {
@@ -222,7 +234,9 @@ public class LeveragingBag extends AbstractClassifier {
         }
         DoubleVector combinedVote = new DoubleVector();
         for (int i = 0; i < this.ensemble.length; i++) {
-            DoubleVector vote = new DoubleVector(this.ensemble[i].getVotesForInstance(inst));
+            double[] voteTmp = this.ensemble[i].getVotesForInstance(inst);
+            ensembleLabels[i].add(Utils.maxIndex(voteTmp));
+            DoubleVector vote = new DoubleVector();
             if (vote.sumOfValues() > 0.0) {
                 vote.normalize();
                 combinedVote.addValues(vote);
@@ -276,8 +290,29 @@ public class LeveragingBag extends AbstractClassifier {
     }
 
     @Override
+    public int measureByteSize() {
+        if (!uuidOption.getValue().equals("")) {
+            Map<String, String> env = System.getenv();
+            String dir = env.get("LOCAL_STORAGE_DIR") + "/Tmp/";
+            try {
+                String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
+                PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
+                for (int i= 0; i < ensembleLabels.length; i++){
+                    writer.println(Utils.arrayToString(this.ensembleLabels[i].toArray()));
+                }
+                writer.close();
+
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+        return super.measureByteSize();
+    }
+
+    @Override
     public Classifier[] getSubClassifiers() {
         return this.ensemble.clone();
     }
+
 }
 

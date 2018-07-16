@@ -18,21 +18,19 @@
  */
 package moa.classifiers.meta;
 
+import com.github.javacliparser.*;
 import com.yahoo.labs.samoa.instances.Instance;
 
 import moa.classifiers.AbstractClassifier;
-import moa.core.DoubleVector;
-import moa.core.InstanceExample;
-import moa.core.Measurement;
-import moa.core.MiscUtils;
+import moa.core.*;
 import moa.options.ClassOption;
 
-import com.github.javacliparser.FloatOption;
-import com.github.javacliparser.FlagOption;
-import com.github.javacliparser.IntOption;
-import com.github.javacliparser.MultiChoiceOption;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 import moa.classifiers.trees.ARFHoeffdingTree;
@@ -118,12 +116,17 @@ public class AdaptiveRandomForest extends AbstractClassifier {
     public FlagOption disableWeightedVote = new FlagOption("disableWeightedVote", 'w', 
             "Should use weighted voting?");
     
-    public FlagOption disableDriftDetectionOption = new FlagOption("disableDriftDetection", 'u',
+    public FlagOption disableDriftDetectionOption = new FlagOption("disableDriftDetection", 't',
         "Should use drift detection? If disabled then bkg learner is also disabled");
 
     public FlagOption disableBackgroundLearnerOption = new FlagOption("disableBackgroundLearner", 'q', 
         "Should use bkg learner? If disabled then reset tree immediately.");
-    
+
+    public StringOption uuidOption = new StringOption("uuidPrefix", 'u',
+            "uuidPrefix.", "");
+
+    private ArrayList<Integer>[] ensembleLabels;
+
     protected static final int FEATURES_M = 0;
     protected static final int FEATURES_SQRT = 1;
     protected static final int FEATURES_SQRT_INV = 2;
@@ -144,6 +147,7 @@ public class AdaptiveRandomForest extends AbstractClassifier {
         if (this.executor != null)
             this.executor.shutdown();
         this.instancesSeen = 0;
+        ensembleLabels = new ArrayList[this.ensembleSizeOption.getValue()];
         this.evaluator = new BasicClassificationPerformanceEvaluator();
         int numberOfJobs;
         if(this.numberOfJobsOption.getValue() == -1) 
@@ -203,7 +207,9 @@ public class AdaptiveRandomForest extends AbstractClassifier {
         DoubleVector combinedVote = new DoubleVector();
 
         for(int i = 0 ; i < this.ensemble.length ; ++i) {
-            DoubleVector vote = new DoubleVector(this.ensemble[i].getVotesForInstance(testInstance));
+            double[] voteTmp = this.ensemble[i].getVotesForInstance(testInstance);
+            ensembleLabels[i].add(Utils.maxIndex(voteTmp));
+            DoubleVector vote = new DoubleVector(voteTmp);
             if (vote.sumOfValues() > 0.0) {
                 vote.normalize();
                 double acc = this.ensemble[i].evaluator.getPerformanceMeasurements()[1].getValue();
@@ -283,6 +289,7 @@ public class AdaptiveRandomForest extends AbstractClassifier {
         
         for(int i = 0 ; i < ensembleSize ; ++i) {
             treeLearner.subspaceSizeOption.setValue(this.subspaceSize);
+            ensembleLabels[i] = new ArrayList();
             this.ensemble[i] = new ARFBaseLearner(
                 i, 
                 (ARFHoeffdingTree) treeLearner.copy(), 
@@ -295,6 +302,26 @@ public class AdaptiveRandomForest extends AbstractClassifier {
                 false);
         }
     }
+    @Override
+    public int measureByteSize() {
+        if (!uuidOption.getValue().equals("")) {
+            Map<String, String> env = System.getenv();
+            String dir = env.get("LOCAL_STORAGE_DIR") + "/Tmp/";
+            try {
+                String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
+                PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
+                for (int i= 0; i < ensembleLabels.length; i++){
+                    writer.println(Utils.arrayToString(this.ensembleLabels[i].toArray()));
+                }
+                writer.close();
+
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+        return super.measureByteSize();
+    }
+
     
     /**
      * Inner class that represents a single tree member of the forest. 

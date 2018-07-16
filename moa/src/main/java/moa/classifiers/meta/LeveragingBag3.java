@@ -157,6 +157,7 @@ public class LeveragingBag3 extends AbstractClassifier implements SAMkNNFS2.STMD
     private float[] lastDistances;
     private Instance lastVotedInstance;
     private double[] lastVotes;
+    private long baggingDistancesTime;
 
     @Override
     public void setModelContext(InstancesHeader context) {
@@ -205,6 +206,7 @@ public class LeveragingBag3 extends AbstractClassifier implements SAMkNNFS2.STMD
         if (executor!=null){
             executor.shutdown();
         }
+        System.out.println("Bagging distances " + baggingDistancesTime/1000000000.);
     }
 
     @Override
@@ -431,13 +433,16 @@ public class LeveragingBag3 extends AbstractClassifier implements SAMkNNFS2.STMD
 
     public float[] getSTMDistancesToIndices(Instance sample, List<Integer> indices){
         if (sample == lastVotedInstance){
+            long start = System.nanoTime();
             //System.out.println("found " + indices.size()+ " " + lastDistances.length);
             float [] distances = new float[indices.size()];
+            int offset = Math.min(trainstepCount, 1000) - trainstepCount;
             for (int i = 0; i < indices.size(); i++){
                 //System.out.println(i + " " + indices.get(i) + " " + (indices.get(i) - trainstepCount + Math.min(trainstepCount, 1000)));
-                distances[i] = lastDistances[indices.get(i) - trainstepCount + Math.min(trainstepCount, 1000)];
+                distances[i] = lastDistances[indices.get(i) + offset];
             }
             //System.out.println("distances " + Utils.arrayToString(distances));
+            baggingDistancesTime += System.nanoTime() - start;
             return distances;
         }
         else{

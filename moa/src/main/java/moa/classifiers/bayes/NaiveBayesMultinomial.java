@@ -179,7 +179,11 @@ public class NaiveBayesMultinomial extends AbstractClassifier {
             double wordCount = instance.valueSparse(i);
             for (int c = 0; c < m_numClasses; c++) {
                 double value = m_wordTotalForClass[c].getValue(index);
-                probOfClassGivenDoc[c] += wordCount * Math.log(value == 0 ? this.laplaceCorrectionOption.getValue() : value );
+                if (Double.isNaN(wordCount * Math.log(value == 0 ? this.laplaceCorrectionOption.getValue() : value ))){
+                    System.out.println(index + " " + value);
+
+                }
+                probOfClassGivenDoc[c] += wordCount * Math.log(Math.max(value == 0 ? this.laplaceCorrectionOption.getValue() : value, 0.0001));
             }
         }
 

@@ -12,24 +12,21 @@
  *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
- *    
+ *
  */
 package moa.classifiers.lazy;
+import java.util.*;
 
-import com.github.javacliparser.FlagOption;
-import com.github.javacliparser.FloatOption;
-import com.github.javacliparser.IntOption;
-import com.yahoo.labs.samoa.instances.Instance;
 import com.yahoo.labs.samoa.instances.InstanceImpl;
+import moa.classifiers.AbstractClassifier;
+import moa.core.Measurement;
+import com.yahoo.labs.samoa.instances.Instance;
 import com.yahoo.labs.samoa.instances.Instances;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
-import moa.classifiers.AbstractClassifier;
-import moa.classifiers.core.driftdetection.ADWIN;
+import com.github.javacliparser.IntOption;
+import com.github.javacliparser.FloatOption;
+import com.github.javacliparser.FlagOption;
 import moa.clusterers.kmeanspm.CoresetKMeans;
-import moa.core.Measurement;
-
-import java.util.*;
-import moa.core.Utils;
 /**
  * Self Adjusting Memory (SAM) coupled with the k Nearest Neighbor classifier (kNN) .<p>
  *
@@ -56,57 +53,55 @@ import moa.core.Utils;
  * }"
  */
 public class SAMkNN2 extends AbstractClassifier {
-    private static final long serialVersionUID = 1L;
+	private static final long serialVersionUID = 1L;
 
-    public IntOption kOption = new IntOption( "k", 'k', "The number of neighbors", 5, 1, Integer.MAX_VALUE);
+	public IntOption kOption = new IntOption( "k", 'k', "The number of neighbors", 5, 1, Integer.MAX_VALUE);
 
-    public IntOption limitOption = new IntOption( "limit", 'w', "The maximum number of instances to store", 5000, 1, Integer.MAX_VALUE);
-    public IntOption minSTMSizeOption = new IntOption( "minSTMSize", 'm', "The minimum number of instances in the STM", 50, 1, Integer.MAX_VALUE);
+	public IntOption limitOption = new IntOption( "limit", 'w', "The maximum number of instances to store", 1000, 1, Integer.MAX_VALUE);
+	public IntOption minSTMSizeOption = new IntOption( "minSTMSize", 'm', "The minimum number of instances in the STM", 50, 1, Integer.MAX_VALUE);
 
-    public FloatOption relativeLTMSizeOption = new FloatOption(
-            "relativeLTMSize",
-            'p',
-            "The allowed LTM size relative to the total limit.",
-            0.4, 0.0, 1.0);
+	public FloatOption relativeLTMSizeOption = new FloatOption(
+			"relativeLTMSize",
+			'p',
+			"The allowed LTM size relative to the total limit.",
+			0.4, 0.0, 1.0);
 
-    public FlagOption recalculateSTMErrorOption = new FlagOption("recalculateError", 'r',
-            "Recalculates the error rate of the STM for size adaption (Costly operation). Otherwise, an approximation is used.");
+	public FlagOption recalculateSTMErrorOption = new FlagOption("recalculateError", 'r',
+			"Recalculates the error rate of the STM for size adaption (Costly operation). Otherwise, an approximation is used.");
 	private int maxClassValue = 0;
-	private ADWIN adwin;
 
-    @Override
-    public String getPurposeString() {
-        return "SAMkNN: special.";
-    }
+	@Override
+	public String getPurposeString() {
+		return "SAMkNN: special.";
+	}
 
-    private Instances stm;
+	private Instances stm;
 	private Instances ltm;
 	private int maxLTMSize;
 	private int maxSTMSize;
 	private List<Integer> stmHistory;
 	private List<Integer> ltmHistory;
 	private List<Integer> cmHistory;
-	private float[][] distanceMatrixSTM;
-	private int trainStepCount;
+	private double[][] distanceMatrixSTM;
+	//private int trainStepCount;
 	private Map<Integer, List<Integer>> predictionHistories;
+	private int trainStepCount;
 
-    protected void init(){
-    	this.maxLTMSize = (int)(relativeLTMSizeOption.getValue() * limitOption.getValue());
-    	this.maxSTMSize = limitOption.getValue() - this.maxLTMSize;
-    	this.stmHistory = new ArrayList<>();
-    	this.ltmHistory = new ArrayList<>();
-    	this.cmHistory = new ArrayList<>();
-    	//store calculated STM distances in a matrix to avoid recalculation, are reused in the STM adaption phase
-		this.distanceMatrixSTM = new float[limitOption.getValue()+1][limitOption.getValue()+1];
+	protected void init(){
+		this.maxLTMSize = (int)(relativeLTMSizeOption.getValue() * limitOption.getValue());
+		this.maxSTMSize = limitOption.getValue() - this.maxLTMSize;
+		this.stmHistory = new ArrayList<>();
+		this.ltmHistory = new ArrayList<>();
+		this.cmHistory = new ArrayList<>();
+		//store calculated STM distances in a matrix to avoid recalculation, are reused in the STM adaption phase
+		this.distanceMatrixSTM = new double[limitOption.getValue()+1][limitOption.getValue()+1];
 		this.predictionHistories = new HashMap<>();
-		this.adwin = new ADWIN();
-    }
 
-
+	}
 
 	@Override
 	public void setModelContext(InstancesHeader context) {
-    	super.setModelContext(context);
+		super.setModelContext(context);
 		try {
 			this.stm = new Instances(context,0);
 			this.stm.setClassIndex(context.classIndex());
@@ -120,8 +115,8 @@ public class SAMkNN2 extends AbstractClassifier {
 		}
 	}
 
-    @Override
-    public void resetLearningImpl() {
+	@Override
+	public void resetLearningImpl() {
 		this.stm = null;
 		this.ltm = null;
 		this.stmHistory = null;
@@ -129,31 +124,25 @@ public class SAMkNN2 extends AbstractClassifier {
 		this.cmHistory = null;
 		this.distanceMatrixSTM = null;
 		this.predictionHistories = null;
-    }
+	}
 
-    @Override
-    public void trainOnInstanceImpl(Instance inst) {
-		boolean correctlyClassifies = this.correctlyClassifies(inst);
-        this.trainStepCount++;
-		//System.out.println(this.trainStepCount);
-
+	@Override
+	public void trainOnInstanceImpl(Instance inst) {
+		this.trainStepCount++;
 		if (inst.classValue() > maxClassValue)
 			maxClassValue = (int)inst.classValue();
 		this.stm.add(inst);
-
 		memorySizeCheck();
 		clean(this.stm, this.ltm, true);
-		float distancesSTM[] = this.get1ToNDistances(inst, this.stm);
-
+		double distancesSTM[] = this.get1ToNDistances(inst, this.stm);
 		for (int i =0; i < this.stm.numInstances();i++){
 			this.distanceMatrixSTM[this.stm.numInstances()-1][i] = distancesSTM[i];
 		}
-
 		int oldWindowSize = this.stm.numInstances();
-		int newWindowSize = Math.min(oldWindowSize, this.getNewSTMSize(recalculateSTMErrorOption.isSet(), correctlyClassifies));
+		int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
 
 		if (newWindowSize < oldWindowSize) {
-			//System.out.println(trainStepCount + " drift reduced from " + oldWindowSize + " to " + newWindowSize);
+			//System.out.println(trainStepCount + " shrinked from " + oldWindowSize + " to " + newWindowSize + " " + ltm.size());
 			int diff = oldWindowSize - newWindowSize;
 			Instances discardedSTMInstances = new Instances(this.stm, 0);
 
@@ -173,80 +162,78 @@ public class SAMkNN2 extends AbstractClassifier {
 			}
 
 			this.clean(this.stm, discardedSTMInstances, false);
-
 			for (int i = 0; i < discardedSTMInstances.numInstances(); i++){
 				this.ltm.add(discardedSTMInstances.get(i).copy());
 			}
-
 			memorySizeCheck();
 		}
-
-    }
+	}
 	/**
 	 * Predicts the label of a given sample by using the STM, LTM and the CM.
-     */
-    @Override
-    public double[] getVotesForInstance(Instance inst) {
+	 */
+	@Override
+	public double[] getVotesForInstance(Instance inst) {
 
 		double vSTM[];
 		double vLTM[];
 		double vCM[];
 		double v[];
-		float distancesSTM[];
-		float distancesLTM[];
-        int predClassSTM = 0;
-        int predClassLTM = 0;
-        int predClassCM = 0;
+		double distancesSTM[];
+		double distancesLTM[];
+		int predClassSTM = 0;
+		int predClassLTM = 0;
+		int predClassCM = 0;
 		try {
 			if (this.stm.numInstances()>0) {
 				distancesSTM = get1ToNDistances(inst, this.stm);
 				int nnIndicesSTM[] = nArgMin(Math.min(distancesSTM.length, this.kOption.getValue()), distancesSTM);
 				vSTM = getDistanceWeightedVotes(distancesSTM, nnIndicesSTM, this.stm);
-                predClassSTM = this.getClassFromVotes(vSTM);
-                distancesLTM = get1ToNDistances(inst, this.ltm);
-                vCM = getCMVotes(distancesSTM, this.stm, distancesLTM, this.ltm);
-                predClassCM = this.getClassFromVotes(vCM);
+				predClassSTM = this.getClassFromVotes(vSTM);
+				distancesLTM = get1ToNDistances(inst, this.ltm);
+				vCM = getCMVotes(distancesSTM, this.stm, distancesLTM, this.ltm);
+				predClassCM = this.getClassFromVotes(vCM);
 				if (this.ltm.numInstances() >= 0) {
-                    int nnIndicesLTM[] = nArgMin(Math.min(distancesLTM.length, this.kOption.getValue()), distancesLTM);
-                    vLTM = getDistanceWeightedVotes(distancesLTM, nnIndicesLTM, this.ltm);
-                    predClassLTM = this.getClassFromVotes(vLTM);
-                }else{
-                    vLTM = new double[inst.numClasses()];
-                }
-                int correctSTM = historySum(this.stmHistory);
-                int correctLTM = historySum(this.ltmHistory);
-                int correctCM = historySum(this.cmHistory);
-                if(correctSTM>=correctLTM && correctSTM>=correctCM){
-                    v=vSTM;
-                }else if(correctLTM>correctSTM && correctLTM>=correctCM){
-                    v=vLTM;
-                }else{
-                    v=vCM;
-                }
-            }else {
-                v = new double[inst.numClasses()];
-            }
-            this.stmHistory.add((predClassSTM==inst.classValue()) ? 1 : 0);
-            this.ltmHistory.add((predClassLTM==inst.classValue()) ? 1 : 0);
-            this.cmHistory.add((predClassCM==inst.classValue()) ? 1 : 0);
+					int nnIndicesLTM[] = nArgMin(Math.min(distancesLTM.length, this.kOption.getValue()), distancesLTM);
+					vLTM = getDistanceWeightedVotes(distancesLTM, nnIndicesLTM, this.ltm);
+					predClassLTM = this.getClassFromVotes(vLTM);
+				}else{
+					vLTM = new double[inst.numClasses()];
+				}
+				int correctSTM = historySum(this.stmHistory);
+				int correctLTM = historySum(this.ltmHistory);
+				int correctCM = historySum(this.cmHistory);
+				if(correctSTM>=correctLTM && correctSTM>=correctCM){
+					v=vSTM;
+				}else if(correctLTM>correctSTM && correctLTM>=correctCM){
+					v=vLTM;
+				}else{
+					v=vCM;
+				}
+			}else {
+				v = new double[inst.numClasses()];
+			}
+			this.stmHistory.add((predClassSTM==inst.classValue()) ? 1 : 0);
+			this.ltmHistory.add((predClassLTM==inst.classValue()) ? 1 : 0);
+			this.cmHistory.add((predClassCM==inst.classValue()) ? 1 : 0);
 		} catch(Exception e) {
 			return new double[inst.numClasses()];
 		}
 		return v;
-    }
+	}
 
-    @Override
-    protected Measurement[] getModelMeasurementsImpl() {
-        return null;
-    }
+	@Override
+	protected Measurement[] getModelMeasurementsImpl() {
+		return null;
+	}
 
-    @Override
-    public void getModelDescription(StringBuilder out, int indent) {
-    }
+	@Override
+	public void getModelDescription(StringBuilder out, int indent) {
+	}
 
-    public boolean isRandomizable() {
-        return true;
-    }
+	@Override
+	public boolean isRandomizable() {
+		return true;
+	}
 
 
 	private int historySum(List<Integer> history){
@@ -268,6 +255,7 @@ public class SAMkNN2 extends AbstractClassifier {
 	 * Performs classwise kMeans++ clustering for given samples with corresponding labels. The number of samples is halved per class.
 	 */
 	private void clusterDown(){
+		//System.out.println(trainStepCount + " cluserdown");
 		int classIndex = this.ltm.classIndex();
 		for (int c = 0; c <= this.maxClassValue; c++){
 			List<double[]> classSamples = new ArrayList<>();
@@ -308,9 +296,9 @@ public class SAMkNN2 extends AbstractClassifier {
 		}
 	}
 
-    /**
-     * Makes sure that the STM and LTM combined doe not surpass the maximum size.
-     */
+	/**
+	 * Makes sure that the STM and LTM combined doe not surpass the maximum size.
+	 */
 	private void memorySizeCheck(){
 		if (this.stm.numInstances() + this.ltm.numInstances() > this.maxSTMSize + this.maxLTMSize){
 			if (this.ltm.numInstances() > this.maxLTMSize){
@@ -331,47 +319,42 @@ public class SAMkNN2 extends AbstractClassifier {
 						this.distanceMatrixSTM[i][j] = this.distanceMatrixSTM[numShifts+i][numShifts+j];
 					}
 				}
-
 			}
-
 		}
 	}
 
 	private void cleanSingle(Instances cleanAgainst, int cleanAgainstindex, Instances toClean){
-		if (toClean.size() > 0){
-			Instances cleanAgainstTmp = new Instances(cleanAgainst);
-			cleanAgainstTmp.delete(cleanAgainstindex);
-			float distancesSTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp);
-			int nnIndicesSTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesSTM.length), distancesSTM);
+		Instances cleanAgainstTmp = new Instances(cleanAgainst);
+		cleanAgainstTmp.delete(cleanAgainstindex);
+		double distancesSTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp);
+		int nnIndicesSTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesSTM.length), distancesSTM);
 
-			float distancesLTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), toClean);
-			int nnIndicesLTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesLTM.length), distancesLTM);
-			double distThreshold = 0;
-			for (int nnIdx: nnIndicesSTM){
-				if (cleanAgainstTmp.get(nnIdx).classValue() == cleanAgainst.get(cleanAgainstindex).classValue()){
-					if (distancesSTM[nnIdx] > distThreshold){
-						distThreshold = distancesSTM[nnIdx];
-					}
+		double distancesLTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), toClean);
+		int nnIndicesLTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesLTM.length), distancesLTM);
+		double distThreshold = 0;
+		for (int nnIdx: nnIndicesSTM){
+			if (cleanAgainstTmp.get(nnIdx).classValue() == cleanAgainst.get(cleanAgainstindex).classValue()){
+				if (distancesSTM[nnIdx] > distThreshold){
+					distThreshold = distancesSTM[nnIdx];
 				}
 			}
-			List<Integer> delIndices = new ArrayList<>();
-			for (int nnIdx: nnIndicesLTM){
-				if (toClean.get(nnIdx).classValue() != cleanAgainst.get(cleanAgainstindex).classValue()) {
-					if (distancesLTM[nnIdx] <= distThreshold){
-						delIndices.add(nnIdx);
-					}
-				}
-			}
-			Collections.sort(delIndices, Collections.reverseOrder());
-			for (Integer idx : delIndices)
-				toClean.delete(idx);
 		}
+		List<Integer> delIndices = new ArrayList<>();
+		for (int nnIdx: nnIndicesLTM){
+			if (toClean.get(nnIdx).classValue() != cleanAgainst.get(cleanAgainstindex).classValue()) {
+				if (distancesLTM[nnIdx] <= distThreshold){
+					delIndices.add(nnIdx);
+				}
+			}
+		}
+		Collections.sort(delIndices, Collections.reverseOrder());
+		for (Integer idx : delIndices)
+			toClean.delete(idx);
 	}
-    /**
-     * Removes distance-based all instances from the input samples that contradict those in the STM.
-     */
+	/**
+	 * Removes distance-based all instances from the input samples that contradict those in the STM.
+	 */
 	private void clean(Instances cleanAgainst, Instances toClean, boolean onlyLast) {
-
 		if (cleanAgainst.numInstances() > this.kOption.getValue() && toClean.numInstances() > 0){
 			if (onlyLast){
 				cleanSingle(cleanAgainst, (cleanAgainst.numInstances()-1), toClean);
@@ -381,23 +364,22 @@ public class SAMkNN2 extends AbstractClassifier {
 				}
 			}
 		}
-
 	}
-    /**
-     * Returns the distance weighted votes.
-     */
-	private double [] getDistanceWeightedVotes(float distances[], int[] nnIndices, Instances instances){
+	/**
+	 * Returns the distance weighted votes.
+	 */
+	private double [] getDistanceWeightedVotes(double distances[], int[] nnIndices, Instances instances){
 
 		double v[] = new double[this.maxClassValue +1];
-        for (int nnIdx : nnIndices) {
-            v[(int)instances.instance(nnIdx).classValue()] += 1./Math.max(distances[nnIdx], 0.000000001);
-        }
+		for (int nnIdx : nnIndices) {
+			v[(int)instances.instance(nnIdx).classValue()] += 1./Math.max(distances[nnIdx], 0.000000001);
+		}
 		return v;
 	}
 
-	private double [] getDistanceWeightedVotesCM(float distances[], int[] nnIndices, Instances stm, Instances ltm){
+	private double [] getDistanceWeightedVotesCM(double distances[], int[] nnIndices, Instances stm, Instances ltm){
 		double v[] = new double[this.maxClassValue +1];
-        for (int nnIdx : nnIndices) {
+		for (int nnIdx : nnIndices) {
 			if (nnIdx < stm.numInstances()) {
 				v[(int) stm.instance(nnIdx).classValue()] += 1. / Math.max(distances[nnIdx], 0.000000001);
 			} else{
@@ -407,33 +389,33 @@ public class SAMkNN2 extends AbstractClassifier {
 		return v;
 	}
 
-    /**
-     * Returns the distance weighted votes for the combined memory (CM).
-     */
-	private double [] getCMVotes(float distancesSTM[], Instances stm, float distancesLTM[], Instances ltm){
-		float[] distancesCM = new float[distancesSTM.length + distancesLTM.length];
+	/**
+	 * Returns the distance weighted votes for the combined memory (CM).
+	 */
+	private double [] getCMVotes(double distancesSTM[], Instances stm, double distancesLTM[], Instances ltm){
+		double[] distancesCM = new double[distancesSTM.length + distancesLTM.length];
 		System.arraycopy(distancesSTM, 0, distancesCM, 0, distancesSTM.length);
 		System.arraycopy(distancesLTM, 0, distancesCM, distancesSTM.length, distancesLTM.length);
 		int nnIndicesCM[] = nArgMin(Math.min(distancesCM.length, this.kOption.getValue()), distancesCM);
 		return getDistanceWeightedVotesCM(distancesCM, nnIndicesCM, stm, ltm);
 	}
 
-    /**
-     * Returns the class with maximum vote.
-     */
+	/**
+	 * Returns the class with maximum vote.
+	 */
 	private int getClassFromVotes(double votes[]){
 		double maxVote = -1;
 		int maxVoteClass = -1;
 		for (int i = 0; i < votes.length; i++){
 			if (votes[i] > maxVote){
 				maxVote = votes[i];
-                maxVoteClass = i;
+				maxVoteClass = i;
 			}
 		}
 		return maxVoteClass;
 	}
 
-	private int getLabelFct(float distances[], Instances instances, int startIdx, int endIdx){
+	private int getLabelFct(double distances[], Instances instances, int startIdx, int endIdx){
 		int nnIndices[] = nArgMin(Math.min(this.kOption.getValue(), distances.length), distances, startIdx, endIdx);
 		double votes[] = getDistanceWeightedVotes(distances, nnIndices, instances);
 		return this.getClassFromVotes(votes);
@@ -442,35 +424,35 @@ public class SAMkNN2 extends AbstractClassifier {
 	/**
 	 * Returns the Euclidean distance.
 	 */
-	private float getDistance(Instance sample, Instance sample2)
+	private double getDistance(Instance sample, Instance sample2)
 	{
-		float sum=0;
+		double sum=0;
 		for (int i=0; i<sample.numInputAttributes(); i++)
 		{
-			float diff = (float) (sample.valueInputAttribute(i)-sample2.valueInputAttribute(i));
+			double diff = sample.valueInputAttribute(i)-sample2.valueInputAttribute(i);
 			sum += diff*diff;
 		}
-		return (float) Math.sqrt(sum);
+		return Math.sqrt(sum);
 	}
 
 	/**
 	 * Returns the Euclidean distance between one sample and a collection of samples in an 1D-array.
 	 */
-	private float[] get1ToNDistances(Instance sample, Instances samples){
-		float distances[] = new float[samples.numInstances()];
+	private double[] get1ToNDistances(Instance sample, Instances samples){
+		double distances[] = new double[samples.numInstances()];
 		for (int i=0; i<samples.numInstances(); i++){
 			distances[i] = this.getDistance(sample, samples.get(i));
 		}
 		return distances;
 	}
 
-    /**
-     * Returns the n smallest indices of the smallest values (sorted).
-     */
-	private int[] nArgMin(int n, float[] values, int startIdx, int endIdx){
+	/**
+	 * Returns the n smallest indices of the smallest values (sorted).
+	 */
+	private int[] nArgMin(int n, double[] values, int startIdx, int endIdx){
 		int indices[] = new int[n];
 		for (int i=0; i<n; i++){
-			float minValue = Float.MAX_VALUE;
+			double minValue = Double.MAX_VALUE;
 			for (int j=startIdx; j<endIdx+1; j++){
 				if (values[j] < minValue){
 					boolean alreadyUsed = false;
@@ -489,13 +471,13 @@ public class SAMkNN2 extends AbstractClassifier {
 		return indices;
 	}
 
-	private int[] nArgMin(int n, float[] values){
+	private int[] nArgMin(int n, double[] values){
 		return nArgMin(n, values, 0, values.length-1);
 	}
 
-    /**
-     * Removes predictions of the largest window size and shifts the remaining ones accordingly.
-     */
+	/**
+	 * Removes predictions of the largest window size and shifts the remaining ones accordingly.
+	 */
 	private void adaptHistories(int numberOfDeletions){
 		for (int i = 0; i < numberOfDeletions; i++){
 			SortedSet<Integer> keys = new TreeSet<>(this.predictionHistories.keySet());
@@ -508,18 +490,18 @@ public class SAMkNN2 extends AbstractClassifier {
 		}
 	}
 
-    /**
-     * Creates a prediction history incrementally by using the previous predictions.
-     */
+	/**
+	 * Creates a prediction history incrementally by using the previous predictions.
+	 */
 	private List<Integer> getIncrementalTestTrainPredHistory(Instances instances, int startIdx, List<Integer> predictionHistory){
 		for (int i= startIdx + this.kOption.getValue() + predictionHistory.size(); i < instances.numInstances(); i++){
 			predictionHistory.add((this.getLabelFct(distanceMatrixSTM[i], instances, startIdx,  i-1)==instances.get(i).classValue()) ? 1 : 0);
 		}
 		return predictionHistory;
 	}
-    /**
-     * Creates a prediction history from the scratch.
-     */
+	/**
+	 * Creates a prediction history from the scratch.
+	 */
 	private List<Integer> getTestTrainPredHistory(Instances instances, int startIdx){
 		List<Integer> predictionHistory = new ArrayList<>();
 		for (int i= startIdx + this.kOption.getValue(); i < instances.numInstances(); i++){
@@ -527,9 +509,9 @@ public class SAMkNN2 extends AbstractClassifier {
 		}
 		return predictionHistory;
 	}
-    /**
-     * Returns the window size with the minimum Interleaved test-train error, using bisection (with recalculation of the STM error).
-     */
+	/**
+	 * Returns the window size with the minimum Interleaved test-train error, using bisection (with recalculation of the STM error).
+	 */
 	private int getMinErrorRateWindowSize() {
 
 		int numSamples = this.stm.numInstances();
@@ -568,9 +550,9 @@ public class SAMkNN2 extends AbstractClassifier {
 			return windowSize;
 		}
 	}
-    /**
-     * Calculates the achieved error rate of a history.
-     */
+	/**
+	 * Calculates the achieved error rate of a history.
+	 */
 	private double getHistoryErrorRate(List<Integer> predHistory){
 		double sumCorrect = 0;
 		for (Integer e : predHistory) {
@@ -579,9 +561,9 @@ public class SAMkNN2 extends AbstractClassifier {
 		return 1. - (sumCorrect / predHistory.size());
 	}
 
-    /**
-     * Returns the window size with the minimum Interleaved test-train error, using bisection (without recalculation using an incremental approximation).
-     */
+	/**
+	 * Returns the window size with the minimum Interleaved test-train error, using bisection (without recalculation using an incremental approximation).
+	 */
 	private int getMinErrorRateWindowSizeIncremental() {
 		int numSamples = this.stm.numInstances();
 		if (numSamples < 2 * this.minSTMSizeOption.getValue()) {
@@ -608,7 +590,6 @@ public class SAMkNN2 extends AbstractClassifier {
 				}
 				errorRates.add(this.getHistoryErrorRate(predHistory));
 			}
-
 			int minErrorRateIdx = errorRates.indexOf(Collections.min(errorRates));
 			if (minErrorRateIdx > 0) {
 				for (int i = 1; i < errorRates.size(); i++){
@@ -629,17 +610,13 @@ public class SAMkNN2 extends AbstractClassifier {
 			return windowSize;
 		}
 	}
-    /**
-     * Returns the bisected STM size which minimizes the interleaved-test-train error.
-     */
-	private int getNewSTMSize(boolean recalculateErrors, boolean correctlyClassifies){
-		int sizeSTM = Integer.MAX_VALUE;
+	/**
+	 * Returns the bisected STM size which minimizes the interleaved-test-train error.
+	 */
+	private int getNewSTMSize(boolean recalculateErrors){
 		if (recalculateErrors)
-			sizeSTM = this.getMinErrorRateWindowSize();
+			return this.getMinErrorRateWindowSize();
 		else
-			sizeSTM = this.getMinErrorRateWindowSizeIncremental();
-
-        this.adwin.setInput(correctlyClassifies ? 0 : 1);
-		return Math.min(sizeSTM, this.adwin.getWidth());
+			return this.getMinErrorRateWindowSizeIncremental();
 	}
 }
