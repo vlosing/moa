@@ -18,7 +18,7 @@
  *    
  */
 package moa.classifiers.meta;
-
+import java.util.Arrays;
 import com.github.javacliparser.*;
 import moa.core.Utils;
 import moa.options.ClassOption;
@@ -236,7 +236,7 @@ public class LeveragingBag extends AbstractClassifier {
         for (int i = 0; i < this.ensemble.length; i++) {
             double[] voteTmp = this.ensemble[i].getVotesForInstance(inst);
             ensembleLabels[i].add(Utils.maxIndex(voteTmp));
-            DoubleVector vote = new DoubleVector();
+            DoubleVector vote = new DoubleVector(voteTmp);
             if (vote.sumOfValues() > 0.0) {
                 vote.normalize();
                 combinedVote.addValues(vote);
@@ -298,7 +298,7 @@ public class LeveragingBag extends AbstractClassifier {
                 String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
                 for (int i= 0; i < ensembleLabels.length; i++){
-                    writer.println(Utils.arrayToString(this.ensembleLabels[i].toArray()));
+                    writer.println(Arrays.toString(this.ensembleLabels[i].toArray()).replace("[", "").replace("]", ""));
                 }
                 writer.close();
 

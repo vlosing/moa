@@ -29,6 +29,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -311,7 +312,7 @@ public class AdaptiveRandomForest extends AbstractClassifier {
                 String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
                 for (int i= 0; i < ensembleLabels.length; i++){
-                    writer.println(Utils.arrayToString(this.ensembleLabels[i].toArray()));
+                    writer.println(Arrays.toString(this.ensembleLabels[i].toArray()).replace("[", "").replace("]", ""));
                 }
                 writer.close();
 

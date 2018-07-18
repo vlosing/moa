@@ -37,10 +37,7 @@ import moa.options.ClassOption;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Map;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -315,7 +312,7 @@ public class SAMBagging extends AbstractClassifier {
                 String fileName = dir + "moaStatistics_" + uuidOption.getValue() + ".csv";
                 PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
                 for (int i= 0; i < ensembleLabels.length; i++){
-                    writer.println(Utils.arrayToString(this.ensembleLabels[i].toArray()));
+                    writer.println(Arrays.toString(this.ensembleLabels[i].toArray()).replace("[", "").replace("]", ""));
                 }
                 writer.close();
 
