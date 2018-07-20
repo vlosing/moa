@@ -20,10 +20,12 @@
  */
 package moa.tasks;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
+import java.io.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Map;
 
+import com.github.javacliparser.StringOption;
 import moa.classifiers.Classifier;
 import moa.core.Example;
 import moa.core.Measurement;
@@ -104,6 +106,9 @@ public class EvaluatePrequential extends MainTask {
 
     public FloatOption alphaOption = new FloatOption("alpha",
             'a', "Fading factor or exponential smoothing factor", .01);
+
+    public StringOption uuidOption = new StringOption("uuidPrefix", 'u',
+            "uuidPrefix.", "");
     //End New for prequential methods
 
     @Override
@@ -189,6 +194,8 @@ public class EvaluatePrequential extends MainTask {
         long evaluateStartTime = System.nanoTime();
         long lastEvaluateStartTime = evaluateStartTime;
         double RAMHours = 0.0;
+        ArrayList<Double> measuredTimes = new ArrayList<>();
+        ArrayList<Long> nInstances = new ArrayList<>();
         while (stream.hasMoreInstances()
                 && ((maxInstances < 0) || (instancesProcessed < maxInstances))
                 && ((maxSeconds < 0) || (secondsElapsed < maxSeconds))) {
@@ -211,8 +218,10 @@ public class EvaluatePrequential extends MainTask {
             instancesProcessed++;
             if (instancesProcessed % this.sampleFrequencyOption.getValue() == 0
                     || stream.hasMoreInstances() == false) {
+                nInstances.add(instancesProcessed);
                 //long evaluateTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
                 long evaluateTime = System.nanoTime();
+                measuredTimes.add(TimingUtils.nanoTimeToSeconds(evaluateTime - evaluateStartTime));
                 double time = TimingUtils.nanoTimeToSeconds(evaluateTime - evaluateStartTime);
                 double timeIncrement = TimingUtils.nanoTimeToSeconds(evaluateTime - lastEvaluateStartTime);
                 double RAMHoursIncrement = 0;
@@ -235,7 +244,6 @@ public class EvaluatePrequential extends MainTask {
                             RAMHours)
                         },
                         evaluator, learner));
-                learner.afterLearning();
                 if (immediateResultStream != null) {
                     if (firstDump) {
                         immediateResultStream.println(learningCurve.headerToString());
@@ -265,6 +273,21 @@ public class EvaluatePrequential extends MainTask {
                 }
                 //secondsElapsed = (int) TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - evaluateStartTime);
                 secondsElapsed = (int) TimingUtils.nanoTimeToSeconds(System.nanoTime() - evaluateStartTime);
+            }
+        }
+        learner.afterLearning();
+        if (!uuidOption.getValue().equals("")) {
+            Map<String, String> env = System.getenv();
+            String dir = env.get("LOCAL_STORAGE_DIR") + "/Tmp/";
+            String fileName = dir + "moaStatisticsRuntime_" + uuidOption.getValue() + ".csv";
+            try {
+                PrintWriter writer = new PrintWriter(new FileOutputStream(fileName, false));
+                writer.println(Arrays.toString(nInstances.toArray()).replace("[", "").replace("]", ""));
+                writer.println(Arrays.toString(measuredTimes.toArray()).replace("[", "").replace("]", ""));
+                writer.close();
+
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
             }
         }
         if (immediateResultStream != null) {
