@@ -224,9 +224,9 @@ public class EvaluatePrequential extends MainTask {
                 measuredTimes.add(TimingUtils.nanoTimeToSeconds(evaluateTime - evaluateStartTime));
                 double time = TimingUtils.nanoTimeToSeconds(evaluateTime - evaluateStartTime);
                 double timeIncrement = TimingUtils.nanoTimeToSeconds(evaluateTime - lastEvaluateStartTime);
-                double RAMHoursIncrement = 0;
-                //double RAMHoursIncrement = learner.measureByteSize() / (1024.0 * 1024.0 * 1024.0); //GBs
-                //RAMHoursIncrement *= (timeIncrement / 3600.0); //Hours
+                //double RAMHoursIncrement = 0;
+                double RAMHoursIncrement = learner.measureByteSize() / (1024.0 * 1024.0 * 1024.0); //GBs
+                RAMHoursIncrement *= (timeIncrement / 3600.0); //Hours
                 RAMHours += RAMHoursIncrement;
                 lastEvaluateStartTime = evaluateTime;
                 learningCurve.insertEntry(new LearningEvaluation(
