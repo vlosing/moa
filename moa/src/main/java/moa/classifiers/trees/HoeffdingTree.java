@@ -546,13 +546,13 @@ public class HoeffdingTree extends AbstractClassifier {
 
     @Override
     public int measureByteSize() {
-        System.out.println("attemptTime " + this.attemptToSplitTime/1000000000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000000000. + "s");
+        /*System.out.println("attemptTime " + this.attemptToSplitTime/1000000000. +  "s all " + (this.trainOnInstanceTime + this.voteOnInstanceTime)/1000000000. + "s");
         System.out.println("attempts " + this.attempts + " splits " + (this.boundSplits + this.maxSplits) + " boundsplits " + this.boundSplits + " maxsplits " + this.maxSplits);
         if (this.splitTimePredictionOption.getChosenIndex() == 2)
             System.out.println("Brent searchs " + brentSearches + " iterations " + brentTotalIterations);
 
         if (measureSplitOffsetOption.isSet())
-            System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));
+            System.out.println("boundOffset " + Utils.mean(this.boundSplitErrors.getArrayRef()) + " maxOffset " + Utils.mean(this.maxSplitErrors.getArrayRef()));*/
         if (!uuidOption.getValue().equals("")) {
             Map<String, String> env = System.getenv();
             String dir = env.get("LOCAL_STORAGE_DIR") + "/Tmp/";

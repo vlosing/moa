@@ -29,6 +29,7 @@ import com.yahoo.labs.samoa.instances.Prediction;
 import moa.core.Measurement;
 import moa.gui.AWTRenderable;
 import moa.options.OptionHandler;
+import java.util.List;
 
 /**
  * Learner interface for incremental learning models. 
@@ -85,6 +86,9 @@ public interface Learner<E extends Example> extends MOAObject, OptionHandler, AW
      */
     public void trainOnInstance(E example);
 
+    public void trainOnInstances(List<E> examples);
+
+
     /**
      * Predicts the class memberships for a given instance. If
      * an instance is unclassified, the returned array elements
@@ -95,6 +99,8 @@ public interface Learner<E extends Example> extends MOAObject, OptionHandler, AW
      * probabilities of the test instance in each class
      */
     public double[] getVotesForInstance(E example);
+
+    public List<double[]> getVotesForInstances(List<E> examples);
 
     /**
      * Gets the current measurements of this learner.

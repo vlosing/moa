@@ -49,6 +49,7 @@ import com.yahoo.labs.samoa.instances.MultiLabelPrediction;
 import com.yahoo.labs.samoa.instances.Prediction;
 
 import moa.core.Utils;
+import weka.core.stopwords.Null;
 
 public abstract class AbstractClassifier extends AbstractOptionHandler
         implements Classifier { //Learner<Example<Instance>> {
@@ -85,6 +86,11 @@ public abstract class AbstractClassifier extends AbstractOptionHandler
     }
 
     @Override
+    public void trainOnInstances(List<Example<Instance>> examples){
+
+    }
+
+    @Override
     public void afterLearning(){
 
     }
@@ -99,7 +105,11 @@ public abstract class AbstractClassifier extends AbstractOptionHandler
         }
     }
 
-	
+    @Override
+    public List<double[]> getVotesForInstances(List<Example<Instance>> examples){
+        return null;
+    }
+
     @Override
     public double[] getVotesForInstance(Example<Instance> example){
 		return getVotesForInstance(example.getData());

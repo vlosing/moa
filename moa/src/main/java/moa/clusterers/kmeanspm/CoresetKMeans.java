@@ -120,6 +120,7 @@ public class CoresetKMeans {
 		double[] newCenterWeight = new double[k];
 		int[] nearestCluster = new int[size];
 		boolean converged;
+		int iterations = 0;
 		do {
 			for (int i = 0; i < k; i++) {
 				for (int j = 0; j < d; j++) {
@@ -158,13 +159,18 @@ public class CoresetKMeans {
 					if (newCenterWeight[i] != 0.0) {
 						double newValue = newCenter[i][j] / newCenterWeight[i];
 						if (newValue != center[i][j]) {
+							//System.out.println(i + " " + j +" newValue " + newValue + " center " + center[i][j] + " newCenterWeight " + newCenterWeight[i]);
 							converged = false;
 						}
 						center[i][j] = newValue;
 					}
 				}
 			}
+			iterations++;
+			//if (iterations % 10 == 0) System.out.println("Iterations " + iterations);
+			if (iterations == 100) System.exit(0);
 		} while (!converged);
+		//System.out.println("Iterations " + iterations);
 		// Replaces the old centroids with the new ones
 		for (int i = 0; i < k; i++) {
 			centroids.set(i, center[i]);

@@ -71,17 +71,16 @@ public class SAMkNN extends AbstractClassifier {
 	public FlagOption recalculateSTMErrorOption = new FlagOption("recalculateError", 'r',
 			"Recalculates the error rate of the STM for size adaption (Costly operation). Otherwise, an approximation is used.");
 
-	public MultiChoiceOption distanceMetricOption = new MultiChoiceOption(
+	/*public MultiChoiceOption distanceMetricOption = new MultiChoiceOption(
 			"distanceMetric", 'a', "The distance metric of the kNN.", new String[]{
 			rEuclidean, rManhatten, rChebychev}, new String[]{
 			"Euclidean",
 			"Manhatten",
-			"Chebychev"}, 0);
+			"Chebychev"}, 0);*/
 	public FlagOption uniformWeightedOption = new FlagOption("disableDistanceWeighting", 'u',
 			"Disables the distance weighting of the kNN");
 
-	public FlagOption normalizeDistancesOption = new FlagOption("normalizeDistances", 'n',
-			"Normalizes the distance of each dimension is the range [0,1]");
+	//public FlagOption normalizeDistancesOption = new FlagOption("normalizeDistances", 'n', "Normalizes the distance of each dimension is the range [0,1]");
 
 	private int maxClassValue = 0;
 	private ADWIN adwin;
@@ -293,13 +292,14 @@ public class SAMkNN extends AbstractClassifier {
 	}
 	@Override
 	public void trainOnInstanceImpl(Instance inst) {
+		//if (trainStepCount % 1000 == 0) System.out.println(trainStepCount);
 		//long start = System.nanoTime();
-		if (normalizeDistancesOption.isSet()) {
+		/*if (normalizeDistancesOption.isSet()) {
 			if (m_Ranges == null)
 				initRangesFirst(inst);
 			else
 				updateRanges(inst);
-		}
+		}*/
 		this.trainStepCount++;
 		if (inst.classValue() > maxClassValue)
 			maxClassValue = (int) inst.classValue();
@@ -327,7 +327,6 @@ public class SAMkNN extends AbstractClassifier {
 		int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
 
 		if (newWindowSize < oldWindowSize) {
-			//System.out.println(trainStepCount + " shrinked from " + oldWindowSize + " to " + newWindowSize + " " + ltm.size());
 			int diff = oldWindowSize - newWindowSize;
 			Instances discardedSTMInstances = new Instances(this.stm, 0);
 
@@ -462,7 +461,7 @@ public class SAMkNN extends AbstractClassifier {
 					this.ltm.delete(i);
 				}
 			}
-			if (classSamples.size() > 0) {
+			if (classSamples.size() > 1) {
 				//used kMeans++ implementation expects the weight of each sample at the first index,
 				// make sure that the first value gets the uniform weight 1, overwrite class value
 				for (double[] sample : classSamples) {
@@ -471,8 +470,10 @@ public class SAMkNN extends AbstractClassifier {
 					}
 					sample[0] = 1;
 				}
-
+				//System.out.println("class " + c + " " + classSamples.size());
+				//System.out.println("kmeans start");
 				List<double[]> centroids = this.kMeans(classSamples, Math.max(classSamples.size() / 2, 1));
+				//System.out.println("kmeans finished");
 
 				for (double[] centroid : centroids) {
 
@@ -504,7 +505,8 @@ public class SAMkNN extends AbstractClassifier {
 			if (this.ltm.numInstances() > this.maxLTMSize) {
 				this.clusterDown();
 			} else { //shift values from STM directly to LTM since STM is full
-				int numShifts = this.maxLTMSize - this.ltm.numInstances() + 1;
+				int minShifts = Math.min((this.maxSTMSize + this.maxLTMSize)/10, 200);
+				int numShifts = Math.max(minShifts, this.maxLTMSize - this.ltm.numInstances() + 1);
 				for (int i = 0; i < numShifts; i++) {
 					this.ltm.addAsReference(this.stm.get(0));
 					//this.ltm.add(this.stm.get(0));
@@ -524,9 +526,6 @@ public class SAMkNN extends AbstractClassifier {
 		Instances cleanAgainstTmp = new Instances(cleanAgainst);
 		cleanAgainstTmp.delete(cleanAgainstindex);
 
-        //double distancesSTM[] = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp);
-        //System.out.println(trainStepCount + " " + cleanAgainstindex + " " +distancesSTM[0] + " " + distancesSTM[1]);
-
         double[] distancesSTM;
 		if (onlyLast) {
             distancesSTM = new double[cleanAgainstTmp.size()];
@@ -536,9 +535,6 @@ public class SAMkNN extends AbstractClassifier {
             distancesSTM = get1ToNDistances(cleanAgainst.get(cleanAgainstindex), cleanAgainstTmp);
         }
 
-
-        //System.out.println(trainStepCount + " " + cleanAgainstindex + " " + Utils.arrayToString(_distSTM));
-        //System.out.println(trainStepCount + " " + cleanAgainstindex + " " + _distSTM.length + " " + _distSTM[getDistancesSTMIdx(0)] + " " + _distSTM[getDistancesSTMIdx(1)]);
 
 		int nnIndicesSTM[] = nArgMin(Math.min(this.kOption.getValue(), distancesSTM.length), distancesSTM);
 
@@ -682,7 +678,7 @@ public class SAMkNN extends AbstractClassifier {
 				sum++;
 			}
 		}
-		if (normalizeDistancesOption.isSet()) {
+		/*if (normalizeDistancesOption.isSet()) {
 			for (int i = 0; i < numericAttributes.length; i++) {
 				double diff = (double) (norm(sample.valueInputAttribute(numericAttributes[i]), numericAttributes[i]) - norm(sample2.valueInputAttribute(numericAttributes[i]), numericAttributes[i]));
 				sum += diff * diff;
@@ -693,6 +689,10 @@ public class SAMkNN extends AbstractClassifier {
 				double diff = (double) (sample.valueInputAttribute(numericAttributes[i]) - sample2.valueInputAttribute(numericAttributes[i]));
 				sum += diff * diff;
 			}
+		}*/
+		for (int i = 0; i < numericAttributes.length; i++) {
+			double diff = (double) (sample.valueInputAttribute(numericAttributes[i]) - sample2.valueInputAttribute(numericAttributes[i]));
+			sum += diff * diff;
 		}
 		return Math.sqrt(sum);
 	}
@@ -720,13 +720,14 @@ public class SAMkNN extends AbstractClassifier {
 	}
 
 	private double getDistance(Instance sample, Instance sample2) {
-		if (distanceMetricOption.getChosenLabel() == rManhatten) {
+		return getEuclideanDistance(sample, sample2);
+		/*if (distanceMetricOption.getChosenLabel() == rManhatten) {
 			return getManhattenDistance(sample, sample2, listAttributes);
 		} else if (distanceMetricOption.getChosenLabel() == rChebychev) {
 			return getChebychevDistance(sample, sample2, listAttributes);
 		} else {
 			return getEuclideanDistance(sample, sample2);
-		}
+		}*/
 	}
 
 	/**
