@@ -80,6 +80,7 @@ public class SAMkNN extends AbstractClassifier {
 	public FlagOption uniformWeightedOption = new FlagOption("disableDistanceWeighting", 'u',
 			"Disables the distance weighting of the kNN");
 
+	public IntOption STMAdaptationInterval = new IntOption("adaptationInterval", 'z', "The number of examples before at which the size of the STM is re-determined", 1, 1, Integer.MAX_VALUE);
 	//public FlagOption normalizeDistancesOption = new FlagOption("normalizeDistances", 'n', "Normalizes the distance of each dimension is the range [0,1]");
 
 	private int maxClassValue = 0;
@@ -322,34 +323,35 @@ public class SAMkNN extends AbstractClassifier {
 		clean(this.stm, this.ltm, true);
 
 
+		if (trainStepCount % STMAdaptationInterval.getValue() == 0) {
+			int oldWindowSize = this.stm.numInstances();
+			int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
 
-		int oldWindowSize = this.stm.numInstances();
-		int newWindowSize = this.getNewSTMSize(recalculateSTMErrorOption.isSet());
+			if (newWindowSize < oldWindowSize) {
+				int diff = oldWindowSize - newWindowSize;
+				Instances discardedSTMInstances = new Instances(this.stm, 0);
 
-		if (newWindowSize < oldWindowSize) {
-			int diff = oldWindowSize - newWindowSize;
-			Instances discardedSTMInstances = new Instances(this.stm, 0);
+				for (int i = diff; i > 0; i--) {
+					discardedSTMInstances.addAsReference(this.stm.get(0));
+					//discardedSTMInstances.add(this.stm.get(0));
+					this.stm.delete(0);
+				}
+				shiftDistMIdx(diff);
 
-			for (int i = diff; i>0;i--){
-				discardedSTMInstances.addAsReference(this.stm.get(0));
-				//discardedSTMInstances.add(this.stm.get(0));
-				this.stm.delete(0);
+				int histDiff = this.stmHistory.size() - newWindowSize;
+				for (int i = 0; i < histDiff; i++) {
+					this.stmHistory.remove(0);
+					this.ltmHistory.remove(0);
+					this.cmHistory.remove(0);
+				}
+
+				this.clean(this.stm, discardedSTMInstances, false);
+				for (int i = 0; i < discardedSTMInstances.numInstances(); i++) {
+					//this.ltm.add(discardedSTMInstances.get(i));
+					this.ltm.addAsReference(discardedSTMInstances.get(i));
+				}
+				memorySizeCheck();
 			}
-			shiftDistMIdx(diff);
-
-			int histDiff = this.stmHistory.size() - newWindowSize;
-			for (int i = 0; i < histDiff; i++) {
-				this.stmHistory.remove(0);
-				this.ltmHistory.remove(0);
-				this.cmHistory.remove(0);
-			}
-
-			this.clean(this.stm, discardedSTMInstances, false);
-			for (int i = 0; i < discardedSTMInstances.numInstances(); i++){
-				//this.ltm.add(discardedSTMInstances.get(i));
-				this.ltm.addAsReference(discardedSTMInstances.get(i));
-			}
-			memorySizeCheck();
 		}
 		//runTimeMeasurementTrain += System.nanoTime() - start;
 	}

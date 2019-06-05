@@ -94,26 +94,20 @@ public class SAMEnsemble extends AbstractClassifier {
 
     //public FlagOption randomizeLamda = new FlagOption("randomizeLamda", 'z', "randomizeLamda");
 
-    //public FlagOption randomizeK = new FlagOption("randomizeK", 'k', "randomizeFeatures");
+    public FlagOption randomizeK = new FlagOption("randomizeK", 'k', "randomizeFeatures");
 
-    //public FlagOption noDriftDetection = new FlagOption("noDriftDetection", 'r', "noDriftDetection");
+    public FlagOption noDriftDetection = new FlagOption("noDriftDetection", 'r', "noDriftDetection");
 
 
-    //public FlagOption randomizeFeatures = new FlagOption("randomizeFeatures", 'f', "randomizeFeatures");
+    public FlagOption randomizeFeatures = new FlagOption("randomizeFeatures", 'f', "randomizeFeatures");
 
     //public FlagOption randomizeDistanceMetric = new FlagOption("randomizeDistanceMetric", 'e', "randomizeDistanceMetric");
 
     private ExecutorService executor;
 
     public void randomizeEnsembleMember(SAMkNN member, int index, InstanceInformation info) {
-        member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
-        int n = info.numAttributes()-1;
-        int nFeatures = Math.min((int) ((Math.round(n * 0.7) + 1)), n) ;
-        //int nFeatures = (int) Math.round(Math.sqrt(n)) + 1;
-        member.randomizeFeatures(nFeatures, info, this.classifierRandom);
-        /*if (randomizeK.isSet()){
+        if (randomizeK.isSet()){
             member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
-            //System.out.println(member.kOption.getValue());
         }
         if (randomizeFeatures.isSet()){
             int n = info.numAttributes()-1;
@@ -121,7 +115,7 @@ public class SAMEnsemble extends AbstractClassifier {
             //int nFeatures = (int) Math.round(Math.sqrt(n)) + 1;
             member.randomizeFeatures(nFeatures, info, this.classifierRandom);
         }
-        if (randomizeDistanceMetric.isSet()){
+        /*if (randomizeDistanceMetric.isSet()){
             member.distanceMetricOption.setChosenIndex(this.classifierRandom.nextInt(2));
             //System.out.println(member.distanceMetricOption.getChosenLabel());
         }
@@ -178,7 +172,9 @@ public class SAMEnsemble extends AbstractClassifier {
         if (executor!=null){
             executor.shutdown();
         }
+
     }
+
 
     @Override
     public void trainOnInstances(List<Example<Instance>> examples){
@@ -213,10 +209,8 @@ public class SAMEnsemble extends AbstractClassifier {
         //if (this.adwin.setInput(correct ? 0 : 1) && this.adwin.getEstimation() > adwinError){
         for (Example<Instance> example: examples) {
             boolean correct = this.correctlyClassifies(example.getData());
-            //if (!noDriftDetection.isSet() && this.adwin.setInput(correct ? 0 : 1)) {
-            if (this.adwin.setInput(correct ? 0 : 1)) {
-                int nRemovals = 1;
-                nRemovals = Math.max(ensemble.length / 10, 1);
+            if (!noDriftDetection.isSet() && this.adwin.setInput(correct ? 0 : 1)) {
+                int nRemovals = Math.max(ensemble.length / 10, 1);
                 //System.out.println(trainstepCount + " " + nRemovals + " removals, adwin width " + adwin.getWidth());
                 List<Integer> excludeIndices = new ArrayList<>();
                 for (int k = 0; k < nRemovals; k++) {
@@ -271,10 +265,8 @@ public class SAMEnsemble extends AbstractClassifier {
         //if (this.adwin.setInput(correct ? 0 : 1) && this.adwin.getEstimation() > adwinError){
 
         boolean correct = this.correctlyClassifies(inst);
-        //if (!noDriftDetection.isSet() && this.adwin.setInput(correct ? 0 : 1)){
-        if (this.adwin.setInput(correct ? 0 : 1)){
-            int nRemovals = 1;
-            nRemovals = Math.max(ensemble.length / 10, 1);
+        if (!noDriftDetection.isSet() && this.adwin.setInput(correct ? 0 : 1)){
+            int nRemovals = Math.max(ensemble.length / 10, 1);
             //System.out.println(trainstepCount + " " + nRemovals + " removals, adwin width " + adwin.getWidth());
             List<Integer> excludeIndices = new ArrayList<>();
             for (int k = 0; k < nRemovals; k++) {
