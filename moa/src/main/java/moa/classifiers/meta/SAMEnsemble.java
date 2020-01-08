@@ -94,24 +94,30 @@ public class SAMEnsemble extends AbstractClassifier {
 
     //public FlagOption randomizeLamda = new FlagOption("randomizeLamda", 'z', "randomizeLamda");
 
-    public FlagOption randomizeK = new FlagOption("randomizeK", 'k', "randomizeFeatures");
+    public IntOption randomizeKOption = new IntOption("randomizeK", 'k',
+            "Randomize k value.", 7, 0, 1000);
 
     public FlagOption noDriftDetection = new FlagOption("noDriftDetection", 'r', "noDriftDetection");
 
 
-    public FlagOption randomizeFeatures = new FlagOption("randomizeFeatures", 'f', "randomizeFeatures");
+
+    public FloatOption randomizeFeatures = new FloatOption("randomizeFeatures", 'f',
+            "proportional size of random subspace", 0.7, 0.0, 1.0);
 
     //public FlagOption randomizeDistanceMetric = new FlagOption("randomizeDistanceMetric", 'e', "randomizeDistanceMetric");
 
     private ExecutorService executor;
 
     public void randomizeEnsembleMember(SAMkNN member, int index, InstanceInformation info) {
-        if (randomizeK.isSet()){
-            member.kOption.setValue(this.classifierRandom.nextInt(7)+1);
+        int kValue = randomizeKOption.getValue();
+        if (kValue > 0){
+            member.kOption.setValue(this.classifierRandom.nextInt(kValue)+1);
         }
-        if (randomizeFeatures.isSet()){
+        double rf = randomizeFeatures.getValue();
+
+        if (rf > 0){
             int n = info.numAttributes()-1;
-            int nFeatures = Math.min((int) ((Math.round(n * 0.7) + 1)), n) ;
+            int nFeatures = Math.min((int) ((Math.round(n * rf) + 1)), n) ;
             //int nFeatures = (int) Math.round(Math.sqrt(n)) + 1;
             member.randomizeFeatures(nFeatures, info, this.classifierRandom);
         }
@@ -224,6 +230,7 @@ public class SAMEnsemble extends AbstractClassifier {
                         }
                     }
                     if (imax != -1) {
+                        System.out.println("reset classifier");
                         excludeIndices.add(imax);
                         this.ensemble[imax].resetLearning();
                         this.ensemble[imax].setModelContext(this.modelContext);
@@ -280,6 +287,7 @@ public class SAMEnsemble extends AbstractClassifier {
                     }
                 }
                 if (imax != -1) {
+                    System.out.println("reset classifier");
                     excludeIndices.add(imax);
                     this.ensemble[imax].resetLearning();
                     this.ensemble[imax].setModelContext(this.modelContext);

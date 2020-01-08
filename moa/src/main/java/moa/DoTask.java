@@ -59,14 +59,14 @@ public class DoTask {
         String version = System.getProperty("java.version");
         char minor = version.charAt(2);
         char point = version.charAt(4);
-        if (minor < '6' || point < '0') {
+        /*if (minor < '6' || point < '0') {
             isJavaVersionOK = false;
             System.err.println();
             System.err.println(Globals.getWorkbenchInfoString());
             System.err.println();
             System.err.print("JDK 1.6.0 or higher is required to run MOA. ");
             System.err.println("JDK version " + version + " found");
-        }
+        }*/
         return isJavaVersionOK;
     }
 

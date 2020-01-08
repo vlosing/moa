@@ -174,7 +174,8 @@ public abstract class AbstractClassifier extends AbstractOptionHandler
     public void resetLearning() {
         this.trainingWeightSeenByModel = 0.0;
         if (isRandomizable()) {
-            this.classifierRandom = new Random(this.randomSeed);
+            //this.classifierRandom = new Random(this.randomSeed);
+            this.classifierRandom = new Random(System.currentTimeMillis());
         }
         resetLearningImpl();
     }
